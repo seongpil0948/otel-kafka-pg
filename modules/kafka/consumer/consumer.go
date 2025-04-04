@@ -72,33 +72,43 @@ func NewConsumer(
 	}
 }
 
-// Start는 Kafka 소비자를 시작합니다.
 func (c *KafkaConsumer) Start(ctx context.Context) error {
 	if c.isRunning {
-		c.log.Info().Msg("Kafka consumer is already running")
-		return nil
+			c.log.Info().Msg("Kafka consumer is already running")
+			return nil
 	}
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	brokerList := strings.Join(c.cfg.Kafka.Brokers, ",")
 	kafkaConfig := &kafka.ConfigMap{
-		"bootstrap.servers":       brokerList,
-		"group.id":                c.cfg.Kafka.GroupID,
-		"client.id":               c.cfg.Kafka.ClientID,
-		"auto.offset.reset":       "latest",
-		"session.timeout.ms":      30000,
-		"heartbeat.interval.ms":   5000,
-		"enable.auto.commit":      true,
-		"auto.commit.interval.ms": 5000,
-		"statistics.interval.ms":  30000, // 통계 수집
+			"bootstrap.servers":              brokerList,
+			"group.id":                       c.cfg.Kafka.GroupID,
+			"client.id":                      c.cfg.Kafka.ClientID,
+			"auto.offset.reset":              "earliest",  // 모든 메시지 처리를 위해 earliest로 변경
+			"session.timeout.ms":             30000,
+			"heartbeat.interval.ms":          5000,
+			"enable.auto.commit":             true,
+			"auto.commit.interval.ms":        5000,
+			
+			// 중요: 단일 할당 전략 사용
+			"partition.assignment.strategy":  "range",  // 여러 전략을 콤마로 나열하지 말고 하나만 사용
+			
+			// 안정성 향상을 위한 추가 설정
+			"socket.keepalive.enable":        true,
+			"socket.max.fails":               3,
+			"reconnect.backoff.ms":           1000,
+			"reconnect.backoff.max.ms":       10000,
+			
+			// 메타데이터 설정
+			"metadata.max.age.ms":            300000,
 	}
 
 	// 소비자 생성
 	consumer, err := kafka.NewConsumer(kafkaConfig)
 	if err != nil {
-		c.log.Error().Err(err).Msg("Failed to create Kafka consumer")
-		return err
+			c.log.Error().Err(err).Msg("Failed to create Kafka consumer")
+			return err
 	}
 	c.client = consumer
 
@@ -106,8 +116,8 @@ func (c *KafkaConsumer) Start(ctx context.Context) error {
 	topics := []string{c.cfg.Kafka.TracesTopic, c.cfg.Kafka.LogsTopic}
 	err = consumer.SubscribeTopics(topics, nil)
 	if err != nil {
-		c.log.Error().Err(err).Msg("Failed to subscribe to Kafka topics")
-		return err
+			c.log.Error().Err(err).Msg("Failed to subscribe to Kafka topics")
+			return err
 	}
 	c.log.Info().Strs("topics", topics).Msg("Subscribed to Kafka topics")
 

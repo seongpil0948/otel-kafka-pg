@@ -1,9 +1,11 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 )
 
@@ -57,8 +59,8 @@ func LoadConfig() *Config {
 		v.SetDefault("database.maxconns", 20)
 
 		v.SetDefault("kafka.brokers", []string{"10.101.91.181:9092", "10.101.91.181:9093"})
-		v.SetDefault("kafka.groupid", "telemetry-processor-group")
-		v.SetDefault("kafka.clientid", "nextjs-otlp-client")
+		v.SetDefault("kafka.groupid", "default-local-group")
+		v.SetDefault("kafka.clientid", "default-local-client")
 		v.SetDefault("kafka.tracestopic", "onpremise.theshop.oltp.dev.trace")
 		v.SetDefault("kafka.logstopic", "onpremise.theshop.oltp.dev.log")
 		v.SetDefault("kafka.batchsize", 100)
@@ -142,6 +144,24 @@ func LoadConfig() *Config {
 		config.Logger.Level = v.GetString("logger.level")
 		config.Logger.IsDev = v.GetBool("logger.isdev")
 	})
+
+	log := zerolog.New(os.Stdout).With().Timestamp().Logger()
+	log.Info().
+			Str("database.host", config.Database.Host).
+			Int("database.port", config.Database.Port).
+			Str("database.user", config.Database.User).
+			Str("database.dbname", config.Database.DBName).
+			Int("database.maxconns", config.Database.MaxConns).
+			Strs("kafka.brokers", config.Kafka.Brokers).
+			Str("kafka.groupid", config.Kafka.GroupID).
+			Str("kafka.clientid", config.Kafka.ClientID).
+			Str("kafka.tracestopic", config.Kafka.TracesTopic).
+			Str("kafka.logstopic", config.Kafka.LogsTopic).
+			Int("kafka.batchsize", config.Kafka.BatchSize).
+			Int("kafka.flushinterval", config.Kafka.FlushInterval).
+			Str("logger.level", config.Logger.Level).
+			Bool("logger.isdev", config.Logger.IsDev).
+			Msg("설정 로드 완료")
 
 	return config
 }
