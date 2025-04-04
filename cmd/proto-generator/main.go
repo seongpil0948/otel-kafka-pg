@@ -3,139 +3,132 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-// 생성할 OpenTelemetry Proto 파일 목록
-var protoFiles = []string{
-	"opentelemetry/proto/common/v1/common.proto",
-	"opentelemetry/proto/resource/v1/resource.proto",
-	"opentelemetry/proto/trace/v1/trace.proto",
-	"opentelemetry/proto/logs/v1/logs.proto",
-	"opentelemetry/proto/collector/trace/v1/trace_service.proto",
-	"opentelemetry/proto/collector/logs/v1/logs_service.proto",
+// 필요한 OpenTelemetry 프로토콜 버퍼 정의 URL
+var protoURLs = map[string]string{
+	"common/v1/common.proto":                         "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/common/v1/common.proto",
+	"resource/v1/resource.proto":                     "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/resource/v1/resource.proto",
+	"trace/v1/trace.proto":                           "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/trace/v1/trace.proto",
+	"logs/v1/logs.proto":                             "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/logs/v1/logs.proto",
+	"collector/trace/v1/trace_service.proto":         "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/collector/trace/v1/trace_service.proto",
+	"collector/logs/v1/logs_service.proto":           "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/opentelemetry/proto/collector/logs/v1/logs_service.proto",
 }
 
-// 베이스 URL
-const baseURL = "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main"
-
 func main() {
-	fmt.Println("OpenTelemetry proto 파일 생성기 시작...")
-
-	// 작업 디렉토리 설정
-	workDir, err := filepath.Abs(".")
-	if err != nil {
-		fmt.Printf("작업 디렉토리 확인 실패: %v\n", err)
-		os.Exit(1)
-	}
-
 	// 임시 디렉토리 생성
-	tempDir := filepath.Join(workDir, "temp_proto")
+	tempDir := "temp_proto"
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		fmt.Printf("임시 디렉토리 생성 실패: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("임시 디렉토리 생성 실패: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// 출력 디렉토리 생성
-	outDir := filepath.Join(workDir, "..", "..", "proto", "gen")
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		fmt.Printf("출력 디렉토리 생성 실패: %v\n", err)
-		os.Exit(1)
+	// proto 출력 디렉토리 생성
+	genDir := "proto/gen"
+	if err := os.MkdirAll(genDir, 0755); err != nil {
+		log.Fatalf("생성 디렉토리 생성 실패: %v", err)
 	}
 
-	// Proto 파일 다운로드
-	for _, protoFile := range protoFiles {
-		downloadPath := filepath.Join(tempDir, protoFile)
-		dir := filepath.Dir(downloadPath)
+	// 각 proto 파일 다운로드
+	for protoPath, url := range protoURLs {
+		fullPath := filepath.Join(tempDir, "opentelemetry/proto", protoPath)
+		dir := filepath.Dir(fullPath)
 		
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			fmt.Printf("디렉토리 생성 실패 %s: %v\n", dir, err)
-			continue
+			log.Fatalf("%s 디렉토리 생성 실패: %v", dir, err)
 		}
 
-		url := fmt.Sprintf("%s/%s", baseURL, protoFile)
-		fmt.Printf("다운로드 중: %s\n", url)
-		
-		if err := downloadFile(url, downloadPath); err != nil {
-			fmt.Printf("다운로드 실패 %s: %v\n", protoFile, err)
-			continue
+		if err := downloadFile(fullPath, url); err != nil {
+			log.Fatalf("%s 다운로드 실패: %v", protoPath, err)
 		}
+		fmt.Printf("%s 다운로드 완료\n", protoPath)
 	}
 
 	// protoc 명령 실행
-	fmt.Println("protoc 실행 중...")
-	
 	protocArgs := []string{
-		fmt.Sprintf("--proto_path=%s", tempDir),
-		fmt.Sprintf("--go_out=%s", outDir),
-		fmt.Sprintf("--go-grpc_out=%s", outDir),
+		"--proto_path=" + tempDir,
+		"--go_out=" + genDir,
+		"--go_opt=paths=source_relative",
+		"--go-grpc_out=" + genDir,
+		"--go-grpc_opt=paths=source_relative",
 	}
-	
+
 	// 모든 proto 파일 추가
-	for _, protoFile := range protoFiles {
-		protocArgs = append(protocArgs, filepath.Join(tempDir, protoFile))
+	for protoPath := range protoURLs {
+		protocArgs = append(protocArgs, filepath.Join("opentelemetry/proto", protoPath))
 	}
 
 	cmd := exec.Command("protoc", protocArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("protoc 실행 실패: %v\n", err)
-		fmt.Println(string(output))
-		os.Exit(1)
+		log.Fatalf("protoc 실행 실패: %v\n%s", err, output)
 	}
 
-	fmt.Println("성공적으로 프로토콜 버퍼 파일 생성 완료!")
-	fmt.Printf("출력 디렉토리: %s\n", outDir)
+	fmt.Printf("Protocol Buffer 코드 생성 성공!\n")
+	fmt.Printf("생성된 파일들은 %s 디렉토리에 저장됨\n", genDir)
 
-	// Go 모듈 생성
-	createGoModFile(filepath.Join(workDir, "..", "..", "proto"))
+	// import path 수정
+	fixImportPaths(genDir)
 }
 
 // 파일 다운로드 함수
-func downloadFile(url, filePath string) error {
+func downloadFile(filepath string, url string) error {
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP 오류: %s", resp.Status)
-	}
-
-	file, err := os.Create(filePath)
+	out, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer out.Close()
 
-	_, err = io.Copy(file, resp.Body)
+	_, err = io.Copy(out, resp.Body)
 	return err
 }
 
-// go.mod 파일 생성 함수
-func createGoModFile(protoDir string) error {
-	goModPath := filepath.Join(protoDir, "go.mod")
-	
-	// 이미 존재하는지 확인
-	if _, err := os.Stat(goModPath); err == nil {
-		fmt.Println("go.mod 파일이 이미 존재합니다. 건너뜁니다.")
+// 생성된 Go 파일의 import 경로 수정
+func fixImportPaths(genDir string) {
+	err := filepath.Walk(genDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".go") {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			// 특정 import 경로 수정
+			modified := strings.ReplaceAll(string(content),
+				`import "opentelemetry/proto`,
+				`import "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto`)
+
+			// 다른 필요한 경로 수정도 추가 가능
+
+			if modified != string(content) {
+				err = ioutil.WriteFile(path, []byte(modified), 0644)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("수정됨: %s\n", path)
+			}
+		}
 		return nil
+	})
+
+	if err != nil {
+		log.Printf("import 경로 수정 중 오류 발생: %v", err)
+	} else {
+		fmt.Println("import 경로 수정 완료")
 	}
-
-	content := `module github.com/seongpil0948/otel-kafka-pg/proto
-
-go 1.24
-
-require (
-	google.golang.org/grpc v1.62.1
-	google.golang.org/protobuf v1.33.0
-)
-`
-
-	return os.WriteFile(goModPath, []byte(content), 0644)
 }

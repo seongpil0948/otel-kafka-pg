@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,9 +81,9 @@ func (c *KafkaConsumer) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Kafka 설정
+	brokerList := strings.Join(c.cfg.Kafka.Brokers, ",")
 	kafkaConfig := &kafka.ConfigMap{
-		"bootstrap.servers":       c.cfg.Kafka.Brokers,
+		"bootstrap.servers":       brokerList,
 		"group.id":                c.cfg.Kafka.GroupID,
 		"client.id":               c.cfg.Kafka.ClientID,
 		"auto.offset.reset":       "latest",

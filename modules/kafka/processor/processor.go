@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf"
+	protobuf "github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
 	logDomain "github.com/seongpil0948/otel-kafka-pg/modules/log/domain"
 	traceDomain "github.com/seongpil0948/otel-kafka-pg/modules/trace/domain"
 
-	collogspb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/collector/logs/v1"
-	coltracepb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/collector/trace/v1"
-	commonpb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/common/v1"
-	logspb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/logs/v1"
-	tracepb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/trace/v1"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 // Processor는 메시지 처리를 위한 인터페이스입니다.
@@ -60,10 +60,10 @@ func (p *ProtoProcessor) ProcessTraceData(data []byte) ([]traceDomain.TraceItem,
 	
 	// OTLP ExportTraceServiceRequest 디코딩 시도
 	requestData := &coltracepb.ExportTraceServiceRequest{}
-	if err := proto.Unmarshal(data, requestData); err != nil {
+	if err := protobuf.Unmarshal(data, requestData); err != nil {
 		// 일반 TracesData 형식 시도
 		tracesData := &tracepb.TracesData{}
-		if err := proto.Unmarshal(data, tracesData); err != nil {
+		if err := protobuf.Unmarshal(data, tracesData); err != nil {
 			p.log.Error().Err(err).Msg("트레이스 데이터 디코딩 실패: 지원되지 않는 형식")
 			return traces, err
 		}
@@ -157,10 +157,10 @@ func (p *ProtoProcessor) ProcessLogData(data []byte) ([]logDomain.LogItem, error
 	
 	// OTLP ExportLogsServiceRequest 디코딩 시도
 	requestData := &collogspb.ExportLogsServiceRequest{}
-	if err := proto.Unmarshal(data, requestData); err != nil {
+	if err := protobuf.Unmarshal(data, requestData); err != nil {
 		// 일반 LogsData 형식 시도
 		logsData := &logspb.LogsData{}
-		if err := proto.Unmarshal(data, logsData); err != nil {
+		if err := protobuf.Unmarshal(data, logsData); err != nil {
 			p.log.Error().Err(err).Msg("로그 데이터 디코딩 실패: 지원되지 않는 형식")
 			return logs, err
 		}

@@ -30,27 +30,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      # 데이터베이스 설정
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-telemetry}
-      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-20}
-      
-      # Kafka 설정
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
-      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-telemetry-processor-group}
-      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-telemetry-processor}
-      KAFKA_TRACE_TOPIC: ${KAFKA_TRACE_TOPIC:-otlp.traces}
-      KAFKA_LOG_TOPIC: ${KAFKA_LOG_TOPIC:-otlp.logs}
-      
-      # 로깅 및 성능 설정
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      NODE_ENV: ${NODE_ENV:-production}
-      BATCH_SIZE: ${BATCH_SIZE:-100}
-      FLUSH_INTERVAL: ${FLUSH_INTERVAL:-5000}
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 30s
