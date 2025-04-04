@@ -2,7 +2,6 @@ package consumer
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"time"
 
@@ -134,7 +133,7 @@ func (c *KafkaConsumer) consumeMessages() {
 
 		default:
 			// 메시지 폴링
-			msg := c.client.Poll(100) // Poll은 단일 값만 반환함
+			msg := c.client.Poll(100) // 100ms 타임아웃으로 메시지 폴링
 
 			if msg == nil {
 				continue
@@ -143,9 +142,9 @@ func (c *KafkaConsumer) consumeMessages() {
 			switch ev := msg.(type) {
 			case *kafka.Message:
 				// 메시지 처리
-				msg := c.client.Poll(100)
-				if msg == nil {
-						continue
+				if err := c.processMessage(ev); err != nil {
+					c.log.Error().Err(err).Msg("메시지 처리 중 오류 발생")
+					continue
 				}
 
 				// 버퍼 사이즈가 임계값을 초과하면 플러시
@@ -194,13 +193,7 @@ func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
 	topic := *msg.TopicPartition.Topic
 
 	if topic == c.cfg.Kafka.TracesTopic {
-		// Protobuf로 디코딩 (여기서는 JSON으로 단순화)
-		var data map[string]interface{}
-		if err := json.Unmarshal(decompressedValue, &data); err != nil {
-			return err
-		}
-
-		traces, err := c.processor.ProcessTraceData(data)
+		traces, err := c.processor.ProcessTraceData(decompressedValue)
 		if err != nil {
 			return err
 		}
@@ -212,13 +205,7 @@ func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
 			c.log.Debug().Int("count", len(traces)).Msg("Processed trace data")
 		}
 	} else if topic == c.cfg.Kafka.LogsTopic {
-		// Protobuf로 디코딩 (여기서는 JSON으로 단순화)
-		var data map[string]interface{}
-		if err := json.Unmarshal(decompressedValue, &data); err != nil {
-			return err
-		}
-
-		logs, err := c.processor.ProcessLogData(data)
+		logs, err := c.processor.ProcessLogData(decompressedValue)
 		if err != nil {
 			return err
 		}

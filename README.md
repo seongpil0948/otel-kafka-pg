@@ -179,6 +179,12 @@ FLUSH_INTERVAL=5000
 4. **Repositories**: PostgreSQL에 데이터 저장
 5. **Health Check**: 시스템 상태 모니터링
 
-## 라이선스
-
-MIT 라이선스
+#### HI
+```bash
+# kafka 모듈의 go.mod 파일 확인
+cd modules/kafka
+# go.mod 파일이 없다면 생성
+go mod init github.com/seongpil0948/otel-kafka-pg/modules/kafka
+# 의존성 정리
+go mod tidy
+```
