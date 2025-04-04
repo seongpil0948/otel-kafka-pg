@@ -1,0 +1,10 @@
+go 1.24
+
+use (
+	./cmd/app
+	./cmd/healthcheck
+	./modules/common
+	./modules/kafka
+	./modules/log
+	./modules/trace
+)
