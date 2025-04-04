@@ -9,8 +9,8 @@ import (
 )
 
 func main() {
-	// 설정 로드
-	cfg := config.LoadConfig()
+	// 설정 로드 (사용하지 않으므로 변수 할당 제거)
+	_ = config.LoadConfig()
 	
 	fmt.Println("Health check 실행 중...")
 	

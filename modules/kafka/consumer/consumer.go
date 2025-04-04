@@ -134,11 +134,7 @@ func (c *KafkaConsumer) consumeMessages() {
 
 		default:
 			// 메시지 폴링
-			msg, err := c.client.Poll(100)
-			if err != nil {
-				c.log.Error().Err(err).Msg("Error polling Kafka message")
-				continue
-			}
+			msg := c.client.Poll(100) // Poll은 단일 값만 반환함
 
 			if msg == nil {
 				continue
@@ -147,9 +143,9 @@ func (c *KafkaConsumer) consumeMessages() {
 			switch ev := msg.(type) {
 			case *kafka.Message:
 				// 메시지 처리
-				err = c.processMessage(ev)
-				if err != nil {
-					c.log.Error().Err(err).Msg("Error processing message")
+				msg := c.client.Poll(100)
+				if msg == nil {
+						continue
 				}
 
 				// 버퍼 사이즈가 임계값을 초과하면 플러시

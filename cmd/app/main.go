@@ -23,7 +23,7 @@ func main() {
 	defer cancel()
 
 	// 1. 설정 초기화
-	cfg := config.LoadConfig()
+	_ = config.LoadConfig() // 설정 로드만 하고 변수는 직접 참조하지 않음
 
 	// 2. 로거 초기화
 	log := logger.Init()
