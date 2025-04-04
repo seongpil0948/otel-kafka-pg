@@ -3,148 +3,139 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
-// 필요한 proto 파일 목록
+// 생성할 OpenTelemetry Proto 파일 목록
 var protoFiles = []string{
 	"opentelemetry/proto/common/v1/common.proto",
 	"opentelemetry/proto/resource/v1/resource.proto",
 	"opentelemetry/proto/trace/v1/trace.proto",
 	"opentelemetry/proto/logs/v1/logs.proto",
-	"opentelemetry/proto/metrics/v1/metrics.proto",
+	"opentelemetry/proto/collector/trace/v1/trace_service.proto",
+	"opentelemetry/proto/collector/logs/v1/logs_service.proto",
 }
 
-// GitHub raw 콘텐츠 URL
-const githubRawBase = "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main/"
-
-// 출력 디렉토리
-const (
-	outputDir      = "./proto"
-	tempProtoDir   = "./temp_proto"
-	generatedGoDir = "./proto/gen"
-)
+// 베이스 URL
+const baseURL = "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/main"
 
 func main() {
-	// 디렉토리 생성
-	createDirectories()
+	fmt.Println("OpenTelemetry proto 파일 생성기 시작...")
 
-	// proto 파일 다운로드
-	downloadProtoFiles()
+	// 작업 디렉토리 설정
+	workDir, err := filepath.Abs(".")
+	if err != nil {
+		fmt.Printf("작업 디렉토리 확인 실패: %v\n", err)
+		os.Exit(1)
+	}
 
-	// protoc 명령어 실행
-	generateGoCode()
+	// 임시 디렉토리 생성
+	tempDir := filepath.Join(workDir, "temp_proto")
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		fmt.Printf("임시 디렉토리 생성 실패: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tempDir)
 
-	// 임시 디렉토리 정리
-	cleanupTempDir()
+	// 출력 디렉토리 생성
+	outDir := filepath.Join(workDir, "..", "..", "proto", "gen")
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		fmt.Printf("출력 디렉토리 생성 실패: %v\n", err)
+		os.Exit(1)
+	}
 
-	fmt.Println("Proto 파일 생성 완료!")
-}
-
-// 필요한 디렉토리 생성
-func createDirectories() {
-	dirs := []string{outputDir, tempProtoDir, generatedGoDir}
-	for _, dir := range dirs {
+	// Proto 파일 다운로드
+	for _, protoFile := range protoFiles {
+		downloadPath := filepath.Join(tempDir, protoFile)
+		dir := filepath.Dir(downloadPath)
+		
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Fatalf("디렉토리 생성 실패 %s: %v", dir, err)
-		}
-	}
-}
-
-// proto 파일 다운로드
-func downloadProtoFiles() {
-	for _, file := range protoFiles {
-		// 파일 경로 생성
-		fullPath := filepath.Join(tempProtoDir, file)
-		dirPath := filepath.Dir(fullPath)
-
-		// 디렉토리가 없으면 생성
-		if err := os.MkdirAll(dirPath, 0755); err != nil {
-			log.Fatalf("디렉토리 생성 실패 %s: %v", dirPath, err)
+			fmt.Printf("디렉토리 생성 실패 %s: %v\n", dir, err)
+			continue
 		}
 
-		// 파일 URL 생성
-		fileURL := githubRawBase + file
-		fmt.Printf("다운로드 중: %s\n", fileURL)
-
-		// HTTP 요청
-		resp, err := http.Get(fileURL)
-		if err != nil {
-			log.Fatalf("파일 다운로드 실패 %s: %v", file, err)
+		url := fmt.Sprintf("%s/%s", baseURL, protoFile)
+		fmt.Printf("다운로드 중: %s\n", url)
+		
+		if err := downloadFile(url, downloadPath); err != nil {
+			fmt.Printf("다운로드 실패 %s: %v\n", protoFile, err)
+			continue
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			log.Fatalf("파일 다운로드 실패 %s: 상태 코드 %d", file, resp.StatusCode)
-		}
-
-		// 파일 생성
-		out, err := os.Create(fullPath)
-		if err != nil {
-			log.Fatalf("파일 생성 실패 %s: %v", fullPath, err)
-		}
-		defer out.Close()
-
-		// 파일 복사
-		_, err = io.Copy(out, resp.Body)
-		if err != nil {
-			log.Fatalf("파일 저장 실패 %s: %v", fullPath, err)
-		}
-
-		fmt.Printf("다운로드 완료: %s\n", file)
-	}
-}
-
-// Go 코드 생성
-func generateGoCode() {
-	// protoc 명령어가 설치되어 있는지 확인
-	if _, err := exec.LookPath("protoc"); err != nil {
-		log.Fatalf("protoc가 설치되어 있지 않습니다. 설치 후 다시 시도해주세요.")
 	}
 
-	// protoc-gen-go가 설치되어 있는지 확인
-	if _, err := exec.LookPath("protoc-gen-go"); err != nil {
-		log.Fatalf("protoc-gen-go가 설치되어 있지 않습니다. 'go install google.golang.org/protobuf/cmd/protoc-gen-go@latest'로 설치해주세요.")
+	// protoc 명령 실행
+	fmt.Println("protoc 실행 중...")
+	
+	protocArgs := []string{
+		fmt.Sprintf("--proto_path=%s", tempDir),
+		fmt.Sprintf("--go_out=%s", outDir),
+		fmt.Sprintf("--go-grpc_out=%s", outDir),
 	}
-
-	// protoc-gen-go-grpc가 설치되어 있는지 확인
-	if _, err := exec.LookPath("protoc-gen-go-grpc"); err != nil {
-		log.Fatalf("protoc-gen-go-grpc가 설치되어 있지 않습니다. 'go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest'로 설치해주세요.")
-	}
-
-	fmt.Println("Go 코드 생성 중...")
-
-	// protoc 명령어 실행
-	args := []string{
-		"--proto_path=" + tempProtoDir,
-		"--go_out=" + generatedGoDir,
-		"--go_opt=paths=source_relative",
-		"--go-grpc_out=" + generatedGoDir,
-		"--go-grpc_opt=paths=source_relative",
-	}
-
+	
 	// 모든 proto 파일 추가
-	for _, file := range protoFiles {
-		args = append(args, filepath.Join(tempProtoDir, file))
+	for _, protoFile := range protoFiles {
+		protocArgs = append(protocArgs, filepath.Join(tempDir, protoFile))
 	}
 
-	cmd := exec.Command("protoc", args...)
+	cmd := exec.Command("protoc", protocArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("protoc 실행 실패: %v\n%s", err, output)
+		fmt.Printf("protoc 실행 실패: %v\n", err)
+		fmt.Println(string(output))
+		os.Exit(1)
 	}
 
-	fmt.Println("Go 코드 생성 완료!")
+	fmt.Println("성공적으로 프로토콜 버퍼 파일 생성 완료!")
+	fmt.Printf("출력 디렉토리: %s\n", outDir)
+
+	// Go 모듈 생성
+	createGoModFile(filepath.Join(workDir, "..", "..", "proto"))
 }
 
-// 임시 디렉토리 정리
-func cleanupTempDir() {
-	fmt.Println("임시 파일 정리 중...")
-	if err := os.RemoveAll(tempProtoDir); err != nil {
-		log.Printf("임시 디렉토리 삭제 실패: %v", err)
+// 파일 다운로드 함수
+func downloadFile(url, filePath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP 오류: %s", resp.Status)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	return err
+}
+
+// go.mod 파일 생성 함수
+func createGoModFile(protoDir string) error {
+	goModPath := filepath.Join(protoDir, "go.mod")
+	
+	// 이미 존재하는지 확인
+	if _, err := os.Stat(goModPath); err == nil {
+		fmt.Println("go.mod 파일이 이미 존재합니다. 건너뜁니다.")
+		return nil
+	}
+
+	content := `module github.com/seongpil0948/otel-kafka-pg/proto
+
+go 1.24
+
+require (
+	google.golang.org/grpc v1.62.1
+	google.golang.org/protobuf v1.33.0
+)
+`
+
+	return os.WriteFile(goModPath, []byte(content), 0644)
 }

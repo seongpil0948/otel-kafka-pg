@@ -29,8 +29,10 @@ func InitializeSchema(db Database) error {
 -- 테이블이 이미 존재하면 삭제
 DROP TABLE IF EXISTS traces CASCADE;
 DROP TABLE IF EXISTS logs CASCADE;
+DROP TABLE IF EXISTS metrics CASCADE;
 DROP TABLE IF EXISTS service_metrics CASCADE;
 
+-- 트레이스 테이블
 CREATE TABLE traces (
   id VARCHAR(255) PRIMARY KEY,
   trace_id VARCHAR(64) NOT NULL,
@@ -54,6 +56,7 @@ CREATE INDEX idx_traces_service_name ON traces(service_name);
 CREATE INDEX idx_traces_start_time ON traces(start_time);
 CREATE INDEX idx_traces_status ON traces(status);
 
+-- 로그 테이블
 CREATE TABLE logs (
   id VARCHAR(255) PRIMARY KEY,
   timestamp BIGINT NOT NULL,   -- 타임스탬프 (밀리초)
@@ -70,6 +73,28 @@ CREATE INDEX idx_logs_timestamp ON logs(timestamp);
 CREATE INDEX idx_logs_service_name ON logs(service_name);
 CREATE INDEX idx_logs_severity ON logs(severity);
 CREATE INDEX idx_logs_trace_id ON logs(trace_id);
+
+-- 메트릭 테이블
+CREATE TABLE metrics (
+  id VARCHAR(255) PRIMARY KEY,
+  metric_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  unit VARCHAR(50),
+  type VARCHAR(32) NOT NULL,    -- gauge, counter, histogram, summary
+  service_name VARCHAR(128) NOT NULL,
+  timestamp BIGINT NOT NULL,    -- 타임스탬프 (밀리초)
+  value DOUBLE PRECISION NOT NULL,
+  histogram_data JSONB,         -- 히스토그램 데이터 (JSON)
+  summary_data JSONB,           -- 요약 데이터 (JSON)
+  labels JSONB NOT NULL,        -- 레이블 (JSON)
+  attributes JSONB,             -- 속성 (JSON)
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_metrics_timestamp ON metrics(timestamp);
+CREATE INDEX idx_metrics_service_name ON metrics(service_name);
+CREATE INDEX idx_metrics_metric_name ON metrics(metric_name);
+CREATE INDEX idx_metrics_type ON metrics(type);
 
 -- 서비스 메트릭 집계 테이블 (성능 향상용)
 CREATE TABLE service_metrics (
@@ -109,6 +134,28 @@ LEFT JOIN
   logs l ON t.trace_id = l.trace_id
 GROUP BY 
   t.id, t.name, t.service_name, t.start_time, t.end_time, t.duration, t.status;
+
+-- 최근 에러 로그와 트레이스를 매칭하는 뷰
+CREATE OR REPLACE VIEW error_logs_with_traces AS
+SELECT
+  l.id as log_id,
+  l.timestamp,
+  l.service_name,
+  l.message,
+  l.severity,
+  l.trace_id,
+  l.span_id,
+  t.name as trace_name,
+  t.duration as trace_duration,
+  t.status as trace_status
+FROM
+  logs l
+LEFT JOIN
+  traces t ON l.trace_id = t.trace_id AND l.span_id = t.span_id
+WHERE
+  l.severity IN ('ERROR', 'FATAL')
+ORDER BY
+  l.timestamp DESC;
 `
 	
 	_, err = tx.Exec(schemaSql)

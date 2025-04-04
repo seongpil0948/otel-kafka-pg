@@ -1,14 +1,20 @@
 package processor
 
 import (
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
 	logDomain "github.com/seongpil0948/otel-kafka-pg/modules/log/domain"
 	traceDomain "github.com/seongpil0948/otel-kafka-pg/modules/trace/domain"
+
+	collogspb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/collector/logs/v1"
+	coltracepb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/collector/trace/v1"
+	commonpb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/common/v1"
 	logspb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/logs/v1"
 	tracepb "github.com/seongpil0948/otel-kafka-pg/proto/gen/opentelemetry/proto/trace/v1"
 )
@@ -48,621 +54,315 @@ func (p *ProtoProcessor) DecompressMessage(data []byte) ([]byte, error) {
 	return data, nil
 }
 
-// MapAttributes는 속성 배열을 키-값 맵으로 변환합니다.
-func (p *ProtoProcessor) MapAttributes(attributes []interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	for _, attr := range attributes {
-		attrMap, ok := attr.(map[string]interface{})
-		if !ok || attrMap["key"] == nil {
-			continue
-		}
-
-		key, ok := attrMap["key"].(string)
-		if !ok {
-			continue
-		}
-
-		var value interface{} = nil
-		valueObj, hasValue := attrMap["value"].(map[string]interface{})
-		
-		if hasValue {
-			// 타입 스위치를 사용하여 더 명확하게 처리
-            for valueType, _ := range map[string]string{
-                "stringValue": "string", 
-                "boolValue": "bool",
-                "intValue": "int",
-                "doubleValue": "double",
-                "arrayValue": "array",
-                "kvlistValue": "kvlist",
-            } {
-                if v, exists := valueObj[valueType]; exists {
-                    value = v
-                    break
-                }
-            }
-		}
-
-		result[key] = value
-	}
-
-	return result
-}
-
 // ProcessTraceData는 Protocol Buffer 형식의 트레이스 데이터를 처리합니다.
 func (p *ProtoProcessor) ProcessTraceData(data []byte) ([]traceDomain.TraceItem, error) {
 	traces := []traceDomain.TraceItem{}
 	
-	// JSON 형식인 경우 (기존 방식과의 호환성을 위해)
-	if len(data) > 0 && data[0] == '{' {
-		var jsonData map[string]interface{}
-		if err := json.Unmarshal(data, &jsonData); err != nil {
-			return nil, fmt.Errorf("JSON 트레이스 데이터 파싱 실패: %w", err)
-		}
-		return p.processJSONTraceData(jsonData)
-	}
-	
-	// Protocol Buffer 디코딩
-	tracesData := &tracepb.TracesData{}
-	if err := proto.Unmarshal(data, tracesData); err != nil {
-		p.log.Error().Err(err).Msg("트레이스 데이터 디코딩 실패")
-		return traces, err
-	}
-	
-	// ResourceSpans 처리
-	for _, resourceSpans := range tracesData.ResourceSpans {
-		// 리소스 속성 추출
-		resourceAttributes := make(map[string]interface{})
-		serviceName := "unknown"
-		
-		if resourceSpans.Resource != nil {
-			for _, attr := range resourceSpans.Resource.Attributes {
-				if attr.Key == "service.name" && attr.Value != nil && attr.Value.StringValue != "" {
-					serviceName = attr.Value.StringValue
-				}
-				resourceAttributes[attr.Key] = getAttributeValue(attr.Value)
-			}
+	// OTLP ExportTraceServiceRequest 디코딩 시도
+	requestData := &coltracepb.ExportTraceServiceRequest{}
+	if err := proto.Unmarshal(data, requestData); err != nil {
+		// 일반 TracesData 형식 시도
+		tracesData := &tracepb.TracesData{}
+		if err := proto.Unmarshal(data, tracesData); err != nil {
+			p.log.Error().Err(err).Msg("트레이스 데이터 디코딩 실패: 지원되지 않는 형식")
+			return traces, err
 		}
 		
-		// ScopeSpans 처리
-		for _, scopeSpans := range resourceSpans.ScopeSpans {
-			// Spans 처리
-			for _, span := range scopeSpans.Spans {
-				attributes := make(map[string]interface{})
-				
-				// Span 속성 추출
-				for _, attr := range span.Attributes {
-					attributes[attr.Key] = getAttributeValue(attr.Value)
-				}
-				
-				// 리소스 속성 병합
-				for k, v := range resourceAttributes {
-					attributes[k] = v
-				}
-				
-				// 상태 코드 변환
-				status := "UNSET"
-				if span.Status != nil {
-					switch span.Status.Code {
-					case tracepb.Status_STATUS_CODE_OK:
-						status = "OK"
-					case tracepb.Status_STATUS_CODE_ERROR:
-						status = "ERROR"
-					}
-				}
-				
-				// TraceItem 생성
-				traceItem := traceDomain.TraceItem{
-					ID:          fmt.Sprintf("%x-%x", span.TraceId, span.SpanId),
-					TraceID:     fmt.Sprintf("%x", span.TraceId),
-					SpanID:      fmt.Sprintf("%x", span.SpanId),
-					ParentSpanID: fmt.Sprintf("%x", span.ParentSpanId),
-					Name:        span.Name,
-					ServiceName: serviceName,
-					StartTime:   int64(span.StartTimeUnixNano / 1000000), // nano → milli
-					EndTime:     int64(span.EndTimeUnixNano / 1000000),   // nano → milli
-					Duration:    float64(span.EndTimeUnixNano-span.StartTimeUnixNano) / 1000000,
-					Status:      status,
-					Attributes:  attributes,
-				}
-				
-				traces = append(traces, traceItem)
-			}
+		// ProcessResourceSpans 호출하여 직접 변환
+		for _, resourceSpans := range tracesData.ResourceSpans {
+			convertedTraces := p.ProcessResourceSpans(resourceSpans)
+			traces = append(traces, convertedTraces...)
 		}
+		return traces, nil
+	}
+	
+	// ExportTraceServiceRequest의 ResourceSpans 처리
+	for _, resourceSpans := range requestData.ResourceSpans {
+		convertedTraces := p.ProcessResourceSpans(resourceSpans)
+		traces = append(traces, convertedTraces...)
 	}
 	
 	return traces, nil
+}
+
+// ProcessResourceSpans는 ResourceSpans를 TraceItem으로 변환합니다.
+func (p *ProtoProcessor) ProcessResourceSpans(resourceSpans *tracepb.ResourceSpans) []traceDomain.TraceItem {
+	traces := []traceDomain.TraceItem{}
+	
+	// 리소스 속성 추출
+	resourceAttributes := make(map[string]interface{})
+	serviceName := "unknown"
+	
+	if resourceSpans.Resource != nil {
+		for _, attr := range resourceSpans.Resource.Attributes {
+			if attr.Key == "service.name" && attr.Value != nil && attr.Value.GetStringValue() != "" {
+				serviceName = attr.Value.GetStringValue()
+			}
+			resourceAttributes[attr.Key] = p.getAttributeValue(attr.Value)
+		}
+	}
+	
+	// ScopeSpans 처리
+	for _, scopeSpans := range resourceSpans.ScopeSpans {
+		// Span 처리
+		for _, span := range scopeSpans.Spans {
+			attributes := make(map[string]interface{})
+			
+			// Span 속성 추출
+			for _, attr := range span.Attributes {
+				attributes[attr.Key] = p.getAttributeValue(attr.Value)
+			}
+			
+			// 리소스 속성 병합
+			for k, v := range resourceAttributes {
+				attributes[k] = v
+			}
+			
+			// 상태 코드 변환
+			status := "UNSET"
+			if span.Status != nil {
+				switch span.Status.Code {
+				case tracepb.Status_STATUS_CODE_OK:
+					status = "OK"
+				case tracepb.Status_STATUS_CODE_ERROR:
+					status = "ERROR"
+				}
+			}
+			
+			// TraceItem 생성
+			traceItem := traceDomain.TraceItem{
+				ID:          fmt.Sprintf("%s-%s", hex.EncodeToString(span.TraceId), hex.EncodeToString(span.SpanId)),
+				TraceID:     hex.EncodeToString(span.TraceId),
+				SpanID:      hex.EncodeToString(span.SpanId),
+				ParentSpanID: hex.EncodeToString(span.ParentSpanId),
+				Name:        span.Name,
+				ServiceName: serviceName,
+				StartTime:   int64(span.StartTimeUnixNano / 1000000), // nano → milli
+				EndTime:     int64(span.EndTimeUnixNano / 1000000),   // nano → milli
+				Duration:    float64(span.EndTimeUnixNano-span.StartTimeUnixNano) / 1000000,
+				Status:      status,
+				Attributes:  attributes,
+			}
+			
+			traces = append(traces, traceItem)
+		}
+	}
+	
+	return traces
 }
 
 // ProcessLogData는 Protocol Buffer 형식의 로그 데이터를 처리합니다.
 func (p *ProtoProcessor) ProcessLogData(data []byte) ([]logDomain.LogItem, error) {
 	logs := []logDomain.LogItem{}
 	
-	// JSON 형식인 경우 (기존 방식과의 호환성을 위해)
-	if len(data) > 0 && data[0] == '{' {
-		var jsonData map[string]interface{}
-		if err := json.Unmarshal(data, &jsonData); err != nil {
-			return nil, fmt.Errorf("JSON 로그 데이터 파싱 실패: %w", err)
-		}
-		return p.processJSONLogData(jsonData)
-	}
-	
-	// Protocol Buffer 디코딩
-	logsData := &logspb.LogsData{}
-	if err := proto.Unmarshal(data, logsData); err != nil {
-		p.log.Error().Err(err).Msg("로그 데이터 디코딩 실패")
-		return logs, err
-	}
-	
-	// ResourceLogs 처리
-	for _, resourceLogs := range logsData.ResourceLogs {
-		// 리소스 속성 추출
-		resourceAttributes := make(map[string]interface{})
-		serviceName := "unknown"
-		
-		if resourceLogs.Resource != nil {
-			for _, attr := range resourceLogs.Resource.Attributes {
-				if attr.Key == "service.name" && attr.Value != nil && attr.Value.StringValue != "" {
-					serviceName = attr.Value.StringValue
-				}
-				resourceAttributes[attr.Key] = getAttributeValue(attr.Value)
-			}
+	// OTLP ExportLogsServiceRequest 디코딩 시도
+	requestData := &collogspb.ExportLogsServiceRequest{}
+	if err := proto.Unmarshal(data, requestData); err != nil {
+		// 일반 LogsData 형식 시도
+		logsData := &logspb.LogsData{}
+		if err := proto.Unmarshal(data, logsData); err != nil {
+			p.log.Error().Err(err).Msg("로그 데이터 디코딩 실패: 지원되지 않는 형식")
+			return logs, err
 		}
 		
-		// ScopeLogs 처리
-		for _, scopeLogs := range resourceLogs.ScopeLogs {
-			// LogRecords 처리
-			for _, logRecord := range scopeLogs.LogRecords {
-				attributes := make(map[string]interface{})
-				
-				// 로그 속성 추출
-				for _, attr := range logRecord.Attributes {
-					attributes[attr.Key] = getAttributeValue(attr.Value)
-				}
-				
-				// 리소스 속성 병합
-				for k, v := range resourceAttributes {
-					attributes[k] = v
-				}
-				
-				// 메시지 본문 추출
-				message := ""
-				if logRecord.Body != nil {
-					message = logRecord.Body.StringValue
-				}
-				
-				// 심각도 변환
-				severity := "INFO"
-				if logRecord.SeverityText != "" {
-					severity = logRecord.SeverityText
-				} else {
-					severity = logDomain.SeverityNumberToText(int(logRecord.SeverityNumber))
-				}
-				
-				// LogItem 생성
-				id := generateID(logRecord.TimeUnixNano)
-				logItem := logDomain.LogItem{
-					ID:          id,
-					Timestamp:   int64(logRecord.TimeUnixNano / 1000000), // nano → milli
-					ServiceName: serviceName,
-					Message:     message,
-					Severity:    severity,
-					TraceID:     fmt.Sprintf("%x", logRecord.TraceId),
-					SpanID:      fmt.Sprintf("%x", logRecord.SpanId),
-					Attributes:  attributes,
-				}
-				
-				logs = append(logs, logItem)
-			}
+		// ProcessResourceLogs 호출하여 직접 변환
+		for _, resourceLogs := range logsData.ResourceLogs {
+			convertedLogs := p.ProcessResourceLogs(resourceLogs)
+			logs = append(logs, convertedLogs...)
 		}
+		return logs, nil
+	}
+	
+	// ExportLogsServiceRequest의 ResourceLogs 처리
+	for _, resourceLogs := range requestData.ResourceLogs {
+		convertedLogs := p.ProcessResourceLogs(resourceLogs)
+		logs = append(logs, convertedLogs...)
 	}
 	
 	return logs, nil
 }
 
+// ProcessResourceLogs는 ResourceLogs를 LogItem으로 변환합니다.
+func (p *ProtoProcessor) ProcessResourceLogs(resourceLogs *logspb.ResourceLogs) []logDomain.LogItem {
+	logs := []logDomain.LogItem{}
+	
+	// 리소스 속성 추출
+	resourceAttributes := make(map[string]interface{})
+	serviceName := "unknown"
+	
+	if resourceLogs.Resource != nil {
+		for _, attr := range resourceLogs.Resource.Attributes {
+			if attr.Key == "service.name" && attr.Value != nil && attr.Value.GetStringValue() != "" {
+				serviceName = attr.Value.GetStringValue()
+			}
+			resourceAttributes[attr.Key] = p.getAttributeValue(attr.Value)
+		}
+	}
+	
+	// ScopeLogs 처리
+	for _, scopeLogs := range resourceLogs.ScopeLogs {
+		// LogRecords 처리
+		for _, logRecord := range scopeLogs.LogRecords {
+			attributes := make(map[string]interface{})
+			
+			// 로그 속성 추출
+			for _, attr := range logRecord.Attributes {
+				attributes[attr.Key] = p.getAttributeValue(attr.Value)
+			}
+			
+			// 리소스 속성 병합
+			for k, v := range resourceAttributes {
+				if _, exists := attributes[k]; !exists {
+					attributes[k] = v
+				}
+			}
+			
+			// 스코프 속성 추가
+			if scopeLogs.Scope != nil {
+				attributes["scope.name"] = scopeLogs.Scope.Name
+				attributes["scope.version"] = scopeLogs.Scope.Version
+				
+				for _, attr := range scopeLogs.Scope.Attributes {
+					key := fmt.Sprintf("scope.attr.%s", attr.Key)
+					attributes[key] = p.getAttributeValue(attr.Value)
+				}
+			}
+			
+			// 메시지 본문 추출
+			message := ""
+			if logRecord.Body != nil {
+				switch bv := logRecord.Body.Value.(type) {
+				case *commonpb.AnyValue_StringValue:
+					message = bv.StringValue
+				case *commonpb.AnyValue_KvlistValue:
+					message = p.formatKVListMessage(bv.KvlistValue)
+				default:
+					// 바디에서 메시지를 추출할 수 없는 경우, 속성에서 메시지 찾기
+					if msg, ok := attributes["message"]; ok {
+						if msgStr, ok := msg.(string); ok {
+							message = msgStr
+						}
+					}
+				}
+			}
+			
+			// 심각도 변환
+			severity := "INFO"
+			if logRecord.SeverityText != "" {
+				severity = logRecord.SeverityText
+			} else {
+				severity = logDomain.SeverityNumberToText(int(logRecord.SeverityNumber))
+			}
+			
+			// LogItem 생성
+			id := p.generateLogID(logRecord.TimeUnixNano, logRecord.TraceId, logRecord.SpanId)
+			logItem := logDomain.LogItem{
+				ID:          id,
+				Timestamp:   int64(logRecord.TimeUnixNano / 1000000), // nano → milli
+				ServiceName: serviceName,
+				Message:     message,
+				Severity:    severity,
+				TraceID:     hex.EncodeToString(logRecord.TraceId),
+				SpanID:      hex.EncodeToString(logRecord.SpanId),
+				Attributes:  attributes,
+			}
+			
+			logs = append(logs, logItem)
+		}
+	}
+	
+	return logs
+}
+
 // getAttributeValue는 속성 값을 적절한 Go 타입으로 변환합니다.
-func getAttributeValue(value *tracepb.AnyValue) interface{} {
+func (p *ProtoProcessor) getAttributeValue(value *commonpb.AnyValue) interface{} {
 	if value == nil {
 		return nil
 	}
 	
 	switch v := value.Value.(type) {
-	case *tracepb.AnyValue_StringValue:
+	case *commonpb.AnyValue_StringValue:
 		return v.StringValue
-	case *tracepb.AnyValue_BoolValue:
+	case *commonpb.AnyValue_BoolValue:
 		return v.BoolValue
-	case *tracepb.AnyValue_IntValue:
+	case *commonpb.AnyValue_IntValue:
 		return v.IntValue
-	case *tracepb.AnyValue_DoubleValue:
+	case *commonpb.AnyValue_DoubleValue:
 		return v.DoubleValue
-	case *tracepb.AnyValue_ArrayValue:
+	case *commonpb.AnyValue_ArrayValue:
 		if v.ArrayValue == nil || len(v.ArrayValue.Values) == 0 {
 			return []interface{}{}
 		}
 		
 		values := make([]interface{}, len(v.ArrayValue.Values))
 		for i, val := range v.ArrayValue.Values {
-			values[i] = getAttributeValue(val)
+			values[i] = p.getAttributeValue(val)
 		}
 		return values
-	case *tracepb.AnyValue_KvlistValue:
+	case *commonpb.AnyValue_KvlistValue:
 		if v.KvlistValue == nil || len(v.KvlistValue.Values) == 0 {
 			return map[string]interface{}{}
 		}
 		
 		kvMap := make(map[string]interface{})
 		for _, kv := range v.KvlistValue.Values {
-			kvMap[kv.Key] = getAttributeValue(kv.Value)
+			kvMap[kv.Key] = p.getAttributeValue(kv.Value)
 		}
 		return kvMap
+	case *commonpb.AnyValue_BytesValue:
+		return hex.EncodeToString(v.BytesValue)
 	default:
 		return nil
 	}
 }
 
-// generateID는 주어진 타임스탬프를 기반으로 고유 ID를 생성합니다.
-func generateID(timeNano uint64) string {
+// formatKVListMessage는 KeyValue 리스트 형태의 로그 바디를 문자열로 변환합니다.
+func (p *ProtoProcessor) formatKVListMessage(kvlist *commonpb.KeyValueList) string {
+	if kvlist == nil || len(kvlist.Values) == 0 {
+		return ""
+	}
+	
+	// 메시지 또는 이벤트 관련 필드 찾기
+	for _, kv := range kvlist.Values {
+		if kv.Key == "message" || kv.Key == "msg" || kv.Key == "event" || kv.Key == "log" {
+			if val := p.getAttributeValue(kv.Value); val != nil {
+				if str, ok := val.(string); ok && str != "" {
+					return str
+				}
+			}
+		}
+	}
+	
+	// 메시지 필드가 없으면 첫 번째 필드 사용
+	if len(kvlist.Values) > 0 {
+		kv := kvlist.Values[0]
+		if val := p.getAttributeValue(kv.Value); val != nil {
+			return fmt.Sprintf("%s: %v", kv.Key, val)
+		}
+	}
+	
+	return "{키-값 목록 로그}"
+}
+
+// generateLogID는 로그 ID를 생성합니다.
+func (p *ProtoProcessor) generateLogID(timeNano uint64, traceID, spanID []byte) string {
+	// 타임스탬프(밀리초) + 트레이스 ID + 스팬 ID + 8자리 랜덤 문자열
 	timeMs := timeNano / 1000000
-	return fmt.Sprintf("%d-%s", timeMs, generateRandomString(8))
-}
-
-// generateRandomString은 지정된 길이의 랜덤 문자열을 생성합니다.
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[i%len(charset)]
-	}
-	return string(b)
-}
-
-// processJSONTraceData는 JSON 형식의 트레이스 데이터를 처리합니다.
-func (p *ProtoProcessor) processJSONTraceData(data map[string]interface{}) ([]traceDomain.TraceItem, error) {
-	traces := []traceDomain.TraceItem{}
 	
-	// JSON 데이터 구조 확인
-	resourceSpans, ok := data["resourceSpans"].([]interface{})
-	if !ok {
-		return traces, fmt.Errorf("잘못된 JSON 트레이스 데이터 형식")
+	// 타임스탬프 + 트레이스/스팬 ID 해시
+	h := sha256.New()
+	h.Write([]byte(fmt.Sprintf("%d", timeMs)))
+	if len(traceID) > 0 {
+		h.Write(traceID)
 	}
+	if len(spanID) > 0 {
+		h.Write(spanID)
+	}
+	// 추가 엔트로피를 위한 현재 나노초
+	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
 	
-	// ResourceSpans 처리
-	for _, rsItem := range resourceSpans {
-		rs, ok := rsItem.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		
-		// 리소스 속성 추출
-		resourceAttributes := make(map[string]interface{})
-		serviceName := "unknown"
-		
-		resource, ok := rs["resource"].(map[string]interface{})
-		if ok {
-			attributes, ok := resource["attributes"].([]interface{})
-			if ok {
-				for _, attrItem := range attributes {
-					attr, ok := attrItem.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					
-					key, ok := attr["key"].(string)
-					if !ok {
-						continue
-					}
-					
-					if key == "service.name" {
-						valueObj, ok := attr["value"].(map[string]interface{})
-						if ok {
-							if svcName, ok := valueObj["stringValue"].(string); ok {
-								serviceName = svcName
-							}
-						}
-					}
-					
-					resourceAttributes[key] = p.extractAttributeValue(attr)
-				}
-			}
-		}
-		
-		// ScopeSpans 처리
-		scopeSpans, ok := rs["scopeSpans"].([]interface{})
-		if !ok {
-			continue
-		}
-		
-		for _, ssItem := range scopeSpans {
-			ss, ok := ssItem.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			
-			// Spans 처리
-			spans, ok := ss["spans"].([]interface{})
-			if !ok {
-				continue
-			}
-			
-			for _, spanItem := range spans {
-				span, ok := spanItem.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				
-				// 필수 필드 추출
-				traceID, _ := span["traceId"].(string)
-				spanID, _ := span["spanId"].(string)
-				parentSpanID, _ := span["parentSpanId"].(string)
-				name, _ := span["name"].(string)
-				startTimeNano, _ := span["startTimeUnixNano"].(float64)
-				endTimeNano, _ := span["endTimeUnixNano"].(float64)
-				
-				// 속성 추출
-				attributes := make(map[string]interface{})
-				spanAttrs, ok := span["attributes"].([]interface{})
-				if ok {
-					for _, attrItem := range spanAttrs {
-						attr, ok := attrItem.(map[string]interface{})
-						if !ok {
-							continue
-						}
-						
-						key, ok := attr["key"].(string)
-						if !ok {
-							continue
-						}
-						
-						attributes[key] = p.extractAttributeValue(attr)
-					}
-				}
-				
-				// 리소스 속성 병합
-				for k, v := range resourceAttributes {
-					attributes[k] = v
-				}
-				
-				// 상태 코드 추출
-				status := "UNSET"
-				statusObj, ok := span["status"].(map[string]interface{})
-				if ok {
-					if code, ok := statusObj["code"].(float64); ok {
-						if code == 1 {
-							status = "OK"
-						} else if code == 2 {
-							status = "ERROR"
-						}
-					}
-				}
-				
-				// TraceItem 생성
-				traceItem := traceDomain.TraceItem{
-					ID:          traceID + "-" + spanID,
-					TraceID:     traceID,
-					SpanID:      spanID,
-					ParentSpanID: parentSpanID,
-					Name:        name,
-					ServiceName: serviceName,
-					StartTime:   int64(startTimeNano / 1000000), // nano → milli
-					EndTime:     int64(endTimeNano / 1000000),   // nano → milli
-					Duration:    float64(endTimeNano-startTimeNano) / 1000000,
-					Status:      status,
-					Attributes:  attributes,
-				}
-				
-				traces = append(traces, traceItem)
-			}
-		}
-	}
+	hashBytes := h.Sum(nil)
+	hashStr := hex.EncodeToString(hashBytes[:8]) // 16자리 해시
 	
-	return traces, nil
-}
-
-// processJSONLogData는 JSON 형식의 로그 데이터를 처리합니다.
-func (p *ProtoProcessor) processJSONLogData(data map[string]interface{}) ([]logDomain.LogItem, error) {
-	logs := []logDomain.LogItem{}
-	
-	// JSON 데이터 구조 확인
-	resourceLogs, ok := data["resourceLogs"].([]interface{})
-	if !ok {
-		return logs, fmt.Errorf("잘못된 JSON 로그 데이터 형식")
-	}
-	
-	// ResourceLogs 처리
-	for _, rlItem := range resourceLogs {
-		rl, ok := rlItem.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		
-		// 리소스 속성 추출
-		resourceAttributes := make(map[string]interface{})
-		serviceName := "unknown"
-		
-		resource, ok := rl["resource"].(map[string]interface{})
-		if ok {
-			attributes, ok := resource["attributes"].([]interface{})
-			if ok {
-				for _, attrItem := range attributes {
-					attr, ok := attrItem.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					
-					key, ok := attr["key"].(string)
-					if !ok {
-						continue
-					}
-					
-					if key == "service.name" {
-						valueObj, ok := attr["value"].(map[string]interface{})
-						if ok {
-							if svcName, ok := valueObj["stringValue"].(string); ok {
-								serviceName = svcName
-							}
-						}
-					}
-					
-					resourceAttributes[key] = p.extractAttributeValue(attr)
-				}
-			}
-		}
-		
-		// ScopeLogs 처리
-		scopeLogs, ok := rl["scopeLogs"].([]interface{})
-		if !ok {
-			continue
-		}
-		
-		for _, slItem := range scopeLogs {
-			sl, ok := slItem.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			
-			// LogRecords 처리
-			logRecords, ok := sl["logRecords"].([]interface{})
-			if !ok {
-				continue
-			}
-			
-			for _, logItem := range logRecords {
-				logRecord, ok := logItem.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				
-				// 필수 필드 추출
-				timeNano, _ := logRecord["timeUnixNano"].(float64)
-				severityNumber, _ := logRecord["severityNumber"].(float64)
-				severityText, _ := logRecord["severityText"].(string)
-				traceID, _ := logRecord["traceId"].(string)
-				spanID, _ := logRecord["spanId"].(string)
-				
-				// 본문 추출
-				message := ""
-				body, ok := logRecord["body"].(map[string]interface{})
-				if ok {
-					if msg, ok := body["stringValue"].(string); ok {
-						message = msg
-					}
-				}
-				
-				// 속성 추출
-				attributes := make(map[string]interface{})
-				logAttrs, ok := logRecord["attributes"].([]interface{})
-				if ok {
-					for _, attrItem := range logAttrs {
-						attr, ok := attrItem.(map[string]interface{})
-						if !ok {
-							continue
-						}
-						
-						key, ok := attr["key"].(string)
-						if !ok {
-							continue
-						}
-						
-						attributes[key] = p.extractAttributeValue(attr)
-					}
-				}
-				
-				// 리소스 속성 병합
-				for k, v := range resourceAttributes {
-					attributes[k] = v
-				}
-				
-				// 심각도 변환
-				severity := "INFO"
-				if severityText != "" {
-					severity = severityText
-				} else {
-					severity = logDomain.SeverityNumberToText(int(severityNumber))
-				}
-				
-				// LogItem 생성
-				id := generateID(uint64(timeNano))
-				logItem := logDomain.LogItem{
-					ID:          id,
-					Timestamp:   int64(timeNano / 1000000), // nano → milli
-					ServiceName: serviceName,
-					Message:     message,
-					Severity:    severity,
-					TraceID:     traceID,
-					SpanID:      spanID,
-					Attributes:  attributes,
-				}
-				
-				logs = append(logs, logItem)
-			}
-		}
-	}
-	
-	return logs, nil
-}
-
-// extractAttributeValue는 JSON 형식의 속성 값을 추출합니다.
-func (p *ProtoProcessor) extractAttributeValue(attr map[string]interface{}) interface{} {
-	valueObj, ok := attr["value"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	
-	// 각 타입별 처리
-	if stringVal, ok := valueObj["stringValue"].(string); ok {
-		return stringVal
-	}
-	if boolVal, ok := valueObj["boolValue"].(bool); ok {
-		return boolVal
-	}
-	if intVal, ok := valueObj["intValue"].(float64); ok {
-		return int64(intVal)
-	}
-	if doubleVal, ok := valueObj["doubleValue"].(float64); ok {
-		return doubleVal
-	}
-	if arrayVal, ok := valueObj["arrayValue"].(map[string]interface{}); ok {
-		values, ok := arrayVal["values"].([]interface{})
-		if !ok {
-			return []interface{}{}
-		}
-		
-		result := make([]interface{}, len(values))
-		for i, val := range values {
-			valMap, ok := val.(map[string]interface{})
-			if !ok {
-				result[i] = nil
-				continue
-			}
-			
-			result[i] = p.extractAttributeValue(map[string]interface{}{
-				"value": valMap,
-			})
-		}
-		return result
-	}
-	if kvlistVal, ok := valueObj["kvlistValue"].(map[string]interface{}); ok {
-		values, ok := kvlistVal["values"].([]interface{})
-		if !ok {
-			return map[string]interface{}{}
-		}
-		
-		result := make(map[string]interface{})
-		for _, val := range values {
-			kv, ok := val.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			
-			key, ok := kv["key"].(string)
-			if !ok {
-				continue
-			}
-			
-			result[key] = p.extractAttributeValue(kv)
-		}
-		return result
-	}
-	
-	return nil
+	return fmt.Sprintf("%d-%s", timeMs, hashStr)
 }

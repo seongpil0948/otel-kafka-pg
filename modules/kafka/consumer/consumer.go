@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type KafkaConsumer struct {
 	isRunning     bool
 	ctx           context.Context
 	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 }
 
 // NewConsumer는 새 Kafka 소비자 인스턴스를 생성합니다.
@@ -88,6 +90,7 @@ func (c *KafkaConsumer) Start(ctx context.Context) error {
 		"heartbeat.interval.ms":   5000,
 		"enable.auto.commit":      true,
 		"auto.commit.interval.ms": 5000,
+		"statistics.interval.ms":  30000, // 통계 수집
 	}
 
 	// 소비자 생성
@@ -111,7 +114,18 @@ func (c *KafkaConsumer) Start(ctx context.Context) error {
 	c.flushTicker = time.NewTicker(time.Duration(c.cfg.Kafka.FlushInterval) * time.Millisecond)
 
 	// 메시지 수신 고루틴 시작
-	go c.consumeMessages()
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.consumeMessages()
+	}()
+
+	// 주기적으로 버퍼 플러시하는 고루틴 시작
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.periodicFlush()
+	}()
 
 	c.isRunning = true
 	c.log.Info().Msg("Kafka consumer started successfully")
@@ -119,59 +133,81 @@ func (c *KafkaConsumer) Start(ctx context.Context) error {
 	return nil
 }
 
-// 메시지 소비 함수
-func (c *KafkaConsumer) consumeMessages() {
+// periodicFlush는 주기적으로 메시지 버퍼를 플러시합니다.
+func (c *KafkaConsumer) periodicFlush() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.log.Info().Msg("Stopping Kafka consumer")
 			return
-
 		case <-c.flushTicker.C:
-			// 주기적으로 버퍼 플러시
-			c.FlushBuffer()
+			if err := c.FlushBuffer(); err != nil {
+				c.log.Error().Err(err).Msg("주기적 버퍼 플러시 중 오류 발생")
+			}
+		}
+	}
+}
 
+// 메시지 소비 함수
+func (c *KafkaConsumer) consumeMessages() {
+	// Kafka로부터 메시지를 수신하는 루프
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.log.Info().Msg("Stopping Kafka message consumption")
+			return
 		default:
 			// 메시지 폴링
-			msg := c.client.Poll(100) // 100ms 타임아웃으로 메시지 폴링
-
-			if msg == nil {
+			ev := c.client.Poll(100) // 100ms 타임아웃으로 메시지 폴링
+			if ev == nil {
 				continue
 			}
 
-			switch ev := msg.(type) {
+			switch e := ev.(type) {
 			case *kafka.Message:
 				// 메시지 처리
-				if err := c.processMessage(ev); err != nil {
-					c.log.Error().Err(err).Msg("메시지 처리 중 오류 발생")
-					continue
+				if err := c.processMessage(e); err != nil {
+					c.log.Error().Err(err).
+						Str("topic", *e.TopicPartition.Topic).
+						Int32("partition", e.TopicPartition.Partition).
+						Str("offset", e.TopicPartition.Offset.String()).
+						Msg("메시지 처리 중 오류 발생")
 				}
 
-				// 버퍼 사이즈가 임계값을 초과하면 플러시
+				// 버퍼 크기 확인하여 임계값 초과 시 플러시
 				c.messageBuffer.mu.Lock()
 				tracesLen := len(c.messageBuffer.Traces)
 				logsLen := len(c.messageBuffer.Logs)
-				timeSinceLastFlush := time.Since(c.messageBuffer.LastFlushTime)
 				c.messageBuffer.mu.Unlock()
 
-				if tracesLen >= c.cfg.Kafka.BatchSize || logsLen >= c.cfg.Kafka.BatchSize || 
-					timeSinceLastFlush.Milliseconds() >= int64(c.cfg.Kafka.FlushInterval) {
-					c.FlushBuffer()
+				if tracesLen >= c.cfg.Kafka.BatchSize || logsLen >= c.cfg.Kafka.BatchSize {
+					if err := c.FlushBuffer(); err != nil {
+						c.log.Error().Err(err).Msg("버퍼 플러시 중 오류 발생")
+					}
 				}
 
 			case kafka.Error:
 				// Kafka 에러 처리
 				c.log.Error().
-					Str("code", ev.Code().String()).
-					Msg(ev.Error())
+					Str("code", e.Code().String()).
+					Msg("Kafka error: " + e.Error())
 
-				// 치명적인 에러인 경우 재연결
-				if ev.Code() == kafka.ErrAllBrokersDown ||
-					ev.Code() == kafka.ErrNetworkException {
+				// 치명적인 에러인 경우 재연결 시도
+				if e.Code() == kafka.ErrAllBrokersDown ||
+				   e.Code() == kafka.ErrNetworkException {
 					c.log.Error().Msg("Critical Kafka error, attempting to reconnect")
-					c.reconnect()
+					go c.reconnect()
 					return
 				}
+
+			case *kafka.Stats:
+				// Kafka 통계 정보 로깅
+				c.log.Debug().Msg("Kafka stats received")
+
+			default:
+				// 기타 Kafka 이벤트 처리
+				c.log.Debug().
+					Str("event", fmt.Sprintf("%T", ev)).
+					Msg("Ignored Kafka event")
 			}
 		}
 	}
@@ -179,23 +215,24 @@ func (c *KafkaConsumer) consumeMessages() {
 
 // 메시지 처리 함수
 func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
-	if msg.Value == nil {
+	if msg == nil || msg.Value == nil {
 		return nil
 	}
 
+	topic := *msg.TopicPartition.Topic
+	
 	// 메시지 압축 해제
 	decompressedValue, err := c.processor.DecompressMessage(msg.Value)
 	if err != nil {
-		return err
+		return fmt.Errorf("message decompression failed: %w", err)
 	}
 
 	// 토픽에 따른 메시지 처리
-	topic := *msg.TopicPartition.Topic
-
-	if topic == c.cfg.Kafka.TracesTopic {
+	switch topic {
+	case c.cfg.Kafka.TracesTopic:
 		traces, err := c.processor.ProcessTraceData(decompressedValue)
 		if err != nil {
-			return err
+			return fmt.Errorf("trace data processing failed: %w", err)
 		}
 		
 		if len(traces) > 0 {
@@ -204,10 +241,11 @@ func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
 			c.messageBuffer.mu.Unlock()
 			c.log.Debug().Int("count", len(traces)).Msg("Processed trace data")
 		}
-	} else if topic == c.cfg.Kafka.LogsTopic {
+
+	case c.cfg.Kafka.LogsTopic:
 		logs, err := c.processor.ProcessLogData(decompressedValue)
 		if err != nil {
-			return err
+			return fmt.Errorf("log data processing failed: %w", err)
 		}
 		
 		if len(logs) > 0 {
@@ -216,6 +254,9 @@ func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
 			c.messageBuffer.mu.Unlock()
 			c.log.Debug().Int("count", len(logs)).Msg("Processed log data")
 		}
+
+	default:
+		c.log.Warn().Str("topic", topic).Msg("Received message from unexpected topic")
 	}
 
 	return nil
@@ -223,17 +264,31 @@ func (c *KafkaConsumer) processMessage(msg *kafka.Message) error {
 
 // FlushBuffer는 버퍼에 있는 메시지를 데이터베이스에 저장합니다.
 func (c *KafkaConsumer) FlushBuffer() error {
+	// 버퍼가 비어있는지 확인
 	c.messageBuffer.mu.Lock()
-	traces := c.messageBuffer.Traces
-	logs := c.messageBuffer.Logs
+	tracesLen := len(c.messageBuffer.Traces)
+	logsLen := len(c.messageBuffer.Logs)
+	
+	if tracesLen == 0 && logsLen == 0 {
+		c.messageBuffer.LastFlushTime = time.Now()
+		c.messageBuffer.mu.Unlock()
+		return nil
+	}
+
+	// 현재 버퍼 내용 복사 후 비우기
+	traces := make([]traceDomain.TraceItem, tracesLen)
+	logs := make([]logDomain.LogItem, logsLen)
+	copy(traces, c.messageBuffer.Traces)
+	copy(logs, c.messageBuffer.Logs)
+	
 	c.messageBuffer.Traces = []traceDomain.TraceItem{}
 	c.messageBuffer.Logs = []logDomain.LogItem{}
 	c.messageBuffer.LastFlushTime = time.Now()
 	c.messageBuffer.mu.Unlock()
 
 	// 트레이스 데이터 저장
-	if len(traces) > 0 {
-		c.log.Info().Int("count", len(traces)).Msg("Flushing trace data to database")
+	if tracesLen > 0 {
+		c.log.Info().Int("count", tracesLen).Msg("Flushing trace data to database")
 		err := c.traceService.SaveTraces(traces)
 		if err != nil {
 			c.log.Error().Err(err).Msg("Error saving traces")
@@ -241,12 +296,13 @@ func (c *KafkaConsumer) FlushBuffer() error {
 			c.messageBuffer.mu.Lock()
 			c.messageBuffer.Traces = append(c.messageBuffer.Traces, traces...)
 			c.messageBuffer.mu.Unlock()
+			return err
 		}
 	}
 
 	// 로그 데이터 저장
-	if len(logs) > 0 {
-		c.log.Info().Int("count", len(logs)).Msg("Flushing log data to database")
+	if logsLen > 0 {
+		c.log.Info().Int("count", logsLen).Msg("Flushing log data to database")
 		err := c.logService.SaveLogs(logs)
 		if err != nil {
 			c.log.Error().Err(err).Msg("Error saving logs")
@@ -254,6 +310,7 @@ func (c *KafkaConsumer) FlushBuffer() error {
 			c.messageBuffer.mu.Lock()
 			c.messageBuffer.Logs = append(c.messageBuffer.Logs, logs...)
 			c.messageBuffer.mu.Unlock()
+			return err
 		}
 	}
 
@@ -271,6 +328,9 @@ func (c *KafkaConsumer) Stop() error {
 	if c.cancel != nil {
 		c.cancel()
 	}
+
+	// 고루틴 종료 대기
+	c.wg.Wait()
 
 	// 마지막으로 버퍼 플러시
 	err := c.FlushBuffer()
@@ -298,16 +358,34 @@ func (c *KafkaConsumer) Stop() error {
 
 // 재연결 함수
 func (c *KafkaConsumer) reconnect() {
-	c.Stop()
-	time.Sleep(5 * time.Second) // 재연결 전 잠시 대기
-	
-	ctx := context.Background()
-	if c.ctx != nil {
-		ctx = c.ctx
-	}
-	
-	err := c.Start(ctx)
+	// 기존 컨슈머 종료
+	err := c.Stop()
 	if err != nil {
-		c.log.Error().Err(err).Msg("Failed to restart Kafka consumer")
+		c.log.Error().Err(err).Msg("Error stopping Kafka consumer during reconnect")
 	}
+
+	// 재연결 전 잠시 대기
+	time.Sleep(5 * time.Second)
+	
+	// 재시작 시도
+	c.log.Info().Msg("Attempting to reconnect Kafka consumer")
+	retryCount := 0
+	for retryCount < 5 {
+		retryCount++
+		ctx := context.Background()
+		if c.ctx != nil {
+			ctx = c.ctx
+		}
+		
+		err := c.Start(ctx)
+		if err == nil {
+			c.log.Info().Msg("Successfully reconnected Kafka consumer")
+			return
+		}
+		
+		c.log.Error().Err(err).Int("retry", retryCount).Msg("Failed to reconnect Kafka consumer")
+		time.Sleep(time.Duration(retryCount) * 5 * time.Second) // 지수 백오프
+	}
+	
+	c.log.Fatal().Msg("Failed to reconnect Kafka consumer after multiple attempts")
 }
