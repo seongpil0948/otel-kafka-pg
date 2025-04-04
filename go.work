@@ -5,6 +5,8 @@ use (
 	./cmd/healthcheck
 	./modules/common
 	./modules/kafka
+	./modules/kafka/consumer
+	./modules/kafka/processor
 	./modules/log
 	./modules/trace
 )

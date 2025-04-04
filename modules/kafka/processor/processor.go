@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf"
 	"github.com/golang/snappy"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
 	logDomain "github.com/seongpil0948/otel-kafka-pg/modules/log/domain"
