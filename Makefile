@@ -47,7 +47,8 @@ docker-build:
 
 # Docker Compose 실행
 docker-compose-up:
-	docker-compose up -d
+	docker-compose up -d --build --remove-orphans --force-recreate
+	@echo "Docker Compose가 실행되었습니다.
 
 # Docker Compose 중지
 docker-compose-down:
