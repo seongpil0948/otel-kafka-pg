@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -103,7 +102,7 @@ func fixImportPaths(genDir string) {
 			return err
 		}
 		if !info.IsDir() && strings.HasSuffix(path, ".go") {
-			content, err := ioutil.ReadFile(path)
+			content, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
@@ -116,7 +115,7 @@ func fixImportPaths(genDir string) {
 			// 다른 필요한 경로 수정도 추가 가능
 
 			if modified != string(content) {
-				err = ioutil.WriteFile(path, []byte(modified), 0644)
+				err = os.WriteFile(path, []byte(modified), 0644)
 				if err != nil {
 					return err
 				}

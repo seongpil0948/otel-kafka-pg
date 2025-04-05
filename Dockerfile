@@ -1,7 +1,6 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24-bullseye AS builder
 
-# 필수 패키지 설치
-RUN apk add --no-cache git gcc libc-dev
+RUN apt-get update && apt-get install -y git build-essential
 
 # 작업 디렉토리 설정
 WORKDIR /app
@@ -33,10 +32,11 @@ RUN CGO_ENABLED=1 go build -o /go/bin/app ./cmd/app/main.go
 RUN CGO_ENABLED=1 go build -o /go/bin/healthcheck ./cmd/healthcheck/main.go
 
 # 최종 이미지
-FROM alpine:latest
+FROM debian:bullseye-slim
 
 # 필수 패키지 설치
-RUN apk add --no-cache ca-certificates tzdata libc6-compat
+RUN apt-get update && apt-get install -y ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+
 
 # 사용자 추가
 RUN addgroup --system --gid 1001 telemetry && \

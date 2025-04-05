@@ -9,5 +9,4 @@ use (
 	./modules/kafka/processor
 	./modules/log
 	./modules/trace
-	./proto
 )
