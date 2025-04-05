@@ -84,3 +84,7 @@ db-init:
 # 전체 초기화 및 실행
 all: clean proto build docker-compose-up
 	@echo "Application is now running!"
+
+push-gitlab:
+	git push gitlab main:prd 
+	@echo "GitLab에 푸시 완료"
