@@ -34,6 +34,11 @@ type Config struct {
 		Level string
 		IsDev bool
 	}
+	DataRetention struct {
+		Enabled        bool
+		CleanupInterval int   // 정리 작업 주기(분)
+		RetentionPeriod int   // 데이터 보존 기간(일)
+	}	
 }
 
 var (
@@ -68,6 +73,10 @@ func LoadConfig() *Config {
 
 		v.SetDefault("logger.level", "info")
 		v.SetDefault("logger.isdev", false)
+
+		v.SetDefault("dataretention.enabled", true)
+		v.SetDefault("dataretention.cleanupinterval", 60) // 1시간 간격 (60분)
+		v.SetDefault("dataretention.retentionperiod", 30) // 30일 보존		
 
 		// 환경 변수에서 개별 설정 가져오기
 		if host := v.GetString("POSTGRES_HOST"); host != "" {
@@ -120,6 +129,17 @@ func LoadConfig() *Config {
 			v.Set("logger.isdev", true)
 		}
 
+		// 데이터 보존 설정
+		if enabled := v.GetBool("DATA_RETENTION_ENABLED"); enabled != v.GetBool("dataretention.enabled") {
+			v.Set("dataretention.enabled", enabled)
+		}
+		if interval := v.GetInt("DATA_RETENTION_CLEANUP_INTERVAL"); interval != 0 {
+			v.Set("dataretention.cleanupinterval", interval)
+		}
+		if period := v.GetInt("DATA_RETENTION_PERIOD"); period != 0 {
+			v.Set("dataretention.retentionperiod", period)
+		}		
+
 		// 구성 생성
 		config = &Config{}
 		
@@ -143,6 +163,11 @@ func LoadConfig() *Config {
 		// 로거 설정
 		config.Logger.Level = v.GetString("logger.level")
 		config.Logger.IsDev = v.GetBool("logger.isdev")
+
+		// 데이터 보존 설정
+		config.DataRetention.Enabled = v.GetBool("dataretention.enabled")
+		config.DataRetention.CleanupInterval = v.GetInt("dataretention.cleanupinterval")
+		config.DataRetention.RetentionPeriod = v.GetInt("dataretention.retentionperiod")
 	})
 
 	log := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -161,6 +186,9 @@ func LoadConfig() *Config {
 			Int("kafka.flushinterval", config.Kafka.FlushInterval).
 			Str("logger.level", config.Logger.Level).
 			Bool("logger.isdev", config.Logger.IsDev).
+			Bool("dataretention.enabled", config.DataRetention.Enabled).
+			Int("dataretention.cleanupinterval", config.DataRetention.CleanupInterval).
+			Int("dataretention.retentionperiod", config.DataRetention.RetentionPeriod).			
 			Msg("설정 로드 완료")
 
 	return config

@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/seongpil0948/otel-kafka-pg/modules/cleanup" // 추가된 import
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/config"
 	commonDB "github.com/seongpil0948/otel-kafka-pg/modules/common/db"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
@@ -23,7 +24,7 @@ func main() {
 	defer cancel()
 
 	// 1. 설정 초기화
-	_ = config.LoadConfig() // 설정 로드만 하고 변수는 직접 참조하지 않음
+	cfg := config.LoadConfig() // 설정 로드 및 변수 참조
 
 	// 2. 로거 초기화
 	log := logger.Init()
@@ -60,18 +61,24 @@ func main() {
 	logSvc := logService.NewLogService(logRepo)
 	traceSvc := traceService.NewTraceService(traceRepo)
 
-	// 6. Kafka 프로세서 및 컨슈머 설정
+	// 6. 데이터 정리 서비스 설정 및 시작
+	cleanupSvc := cleanup.NewCleanupService(database, cfg)
+	if err := cleanupSvc.Start(ctx); err != nil {
+		log.Error().Err(err).Msg("데이터 정리 서비스 시작 실패")
+	}
+
+	// 7. Kafka 프로세서 및 컨슈머 설정
 	proc := processor.NewProcessor()
 	kafkaConsumer := consumer.NewConsumer(proc, traceSvc, logSvc)
 
-	// 7. Kafka 컨슈머 시작
+	// 8. Kafka 컨슈머 시작
 	log.Info().Msg("Kafka 컨슈머 시작 중...")
 	if err := kafkaConsumer.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("Kafka 컨슈머 시작 실패")
 	}
 	log.Info().Msg("Kafka 컨슈머가 실행 중입니다")
 
-	// 8. 애플리케이션 상태 로깅
+	// 9. 애플리케이션 상태 로깅
 	log.Info().Msg("OpenTelemetry 텔레메트리 백엔드가 정상적으로 실행 중입니다")
 	log.Info().Msg("프로토콜 버퍼를 사용하여 로그 및 트레이스 데이터 처리 중...")
 
@@ -83,12 +90,20 @@ func main() {
 	sig := <-sigCh
 	log.Info().Str("signal", sig.String()).Msg("종료 신호 수신, 정상 종료를 시작합니다")
 
-	// 9. 정상 종료 처리
-	shutdown(ctx, database, kafkaConsumer, log)
+	// 10. 정상 종료 처리 
+	shutdown(ctx, database, kafkaConsumer, cleanupSvc, log)
 }
 
 // shutdown은 애플리케이션을 정상적으로 종료합니다.
-func shutdown(ctx context.Context, database commonDB.Database, kafkaConsumer consumer.Consumer, log logger.Logger) {
+func shutdown(ctx context.Context, database commonDB.Database, kafkaConsumer consumer.Consumer, cleanupSvc cleanup.CleanupService, log logger.Logger) {
+	// 데이터 정리 서비스 종료
+	log.Info().Msg("데이터 정리 서비스 종료 중...")
+	if err := cleanupSvc.Stop(); err != nil {
+		log.Error().Err(err).Msg("데이터 정리 서비스 종료 실패")
+	} else {
+		log.Info().Msg("데이터 정리 서비스가 정상적으로 종료되었습니다")
+	}
+
 	// Kafka 컨슈머 종료
 	log.Info().Msg("Kafka 컨슈머 종료 중...")
 	if err := kafkaConsumer.Stop(); err != nil {
