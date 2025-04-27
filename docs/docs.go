@@ -794,7 +794,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
 	Host:             "localhost:8080",
-	BasePath:         "/api",
+	BasePath:         "/api/telemetry",
 	Schemes:          []string{},
 	Title:            "OpenTelemetry API",
 	Description:      "OpenTelemetry 텔레메트리 데이터를 위한 RESTful API 서비스",

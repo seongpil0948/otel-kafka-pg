@@ -1,4 +1,4 @@
-basePath: /api
+basePath: /api/telemetry
 definitions:
   github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ErrorInfo:
     properties:
