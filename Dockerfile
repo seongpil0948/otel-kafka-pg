@@ -6,14 +6,12 @@ RUN apt-get update && apt-get install -y git build-essential
 WORKDIR /app
 
 # Go workspace 설정
-COPY go.work go.work
-
-# 모듈 복사
-COPY modules/ modules/
-COPY cmd/ cmd/
+COPY . .
 
 # 모듈 초기화
 WORKDIR /app/modules/common
+RUN go mod download
+WORKDIR /app/modules/api
 RUN go mod download
 WORKDIR /app/modules/log
 RUN go mod download

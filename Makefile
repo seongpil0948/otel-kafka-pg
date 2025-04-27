@@ -66,6 +66,18 @@ logs:
 db-init:
 	$(GO_BUILD_ENV) go run ./cmd/app/main.go --init-db-only
 
+
+# Swagger 문서 생성
+swagger:
+	mkdir -p docs
+	swag init -g cmd/app/main.go -o docs --parseDependency --parseInternal
+	@echo "Swagger 문서가 생성되었습니다."
+
+# Swagger 문서 서식 정리
+swagger-fmt:
+	swag fmt -g cmd/app/main.go -d ./
+	@echo "Swagger 문서 서식이 정리되었습니다."
+	
 # 전체 초기화 및 실행
 all: clean build docker-compose-up
 	@echo "Application is now running!"

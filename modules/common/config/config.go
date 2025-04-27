@@ -21,12 +21,12 @@ type Config struct {
 	}
 
 	Kafka struct {
-		Brokers     []string
-		GroupID     string
-		ClientID    string
-		TracesTopic string
-		LogsTopic   string
-		BatchSize   int
+		Brokers       []string
+		GroupID       string
+		ClientID      string
+		TracesTopic   string
+		LogsTopic     string
+		BatchSize     int
 		FlushInterval int
 	}
 
@@ -35,10 +35,20 @@ type Config struct {
 		IsDev bool
 	}
 	DataRetention struct {
-		Enabled        bool
-		CleanupInterval int   // 정리 작업 주기(분)
-		RetentionPeriod int   // 데이터 보존 기간(일)
-	}	
+		Enabled         bool
+		CleanupInterval int // 정리 작업 주기(분)
+		RetentionPeriod int // 데이터 보존 기간(일)
+	}
+	API struct {
+		Port             int      `json:"port"`
+		Host             string   `json:"host"`
+		BasePath         string   `json:"basePath"`
+		AllowedOrigins   []string `json:"allowedOrigins"`
+		AllowCredentials bool     `json:"allowCredentials"`
+		ReadTimeout      int      `json:"readTimeout"`
+		WriteTimeout     int      `json:"writeTimeout"`
+		EnableSwagger    bool     `json:"enableSwagger"`
+	}
 }
 
 var (
@@ -50,7 +60,7 @@ var (
 func LoadConfig() *Config {
 	once.Do(func() {
 		v := viper.New()
-		
+
 		// 환경 변수에서 설정 가져오기
 		v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 		v.AutomaticEnv()
@@ -76,7 +86,16 @@ func LoadConfig() *Config {
 
 		v.SetDefault("dataretention.enabled", true)
 		v.SetDefault("dataretention.cleanupinterval", 60) // 1시간 간격 (60분)
-		v.SetDefault("dataretention.retentionperiod", 30) // 30일 보존		
+		v.SetDefault("dataretention.retentionperiod", 30) // 30일 보존
+
+		v.SetDefault("api.port", 8080)
+		v.SetDefault("api.host", "")
+		v.SetDefault("api.basePath", "/api")
+		v.SetDefault("api.allowedOrigins", []string{"*"})
+		v.SetDefault("api.allowCredentials", true)
+		v.SetDefault("api.readTimeout", 10)  // 10초
+		v.SetDefault("api.writeTimeout", 30) // 30초
+		v.SetDefault("api.enableSwagger", true)
 
 		// 환경 변수에서 개별 설정 가져오기
 		if host := v.GetString("POSTGRES_HOST"); host != "" {
@@ -138,11 +157,43 @@ func LoadConfig() *Config {
 		}
 		if period := v.GetInt("DATA_RETENTION_PERIOD"); period != 0 {
 			v.Set("dataretention.retentionperiod", period)
-		}		
+		}
+
+		if apiPort := v.GetInt("API_PORT"); apiPort != 0 {
+			v.Set("api.port", apiPort)
+		}
+
+		if apiHost := v.GetString("API_HOST"); apiHost != "" {
+			v.Set("api.host", apiHost)
+		}
+
+		if apiBasePath := v.GetString("API_BASE_PATH"); apiBasePath != "" {
+			v.Set("api.basePath", apiBasePath)
+		}
+
+		if origins := v.GetString("API_ALLOWED_ORIGINS"); origins != "" {
+			v.Set("api.allowedOrigins", strings.Split(origins, ","))
+		}
+
+		if allowCreds := v.GetBool("API_ALLOW_CREDENTIALS"); allowCreds != v.GetBool("api.allowCredentials") {
+			v.Set("api.allowCredentials", allowCreds)
+		}
+
+		if readTimeout := v.GetInt("API_READ_TIMEOUT"); readTimeout != 0 {
+			v.Set("api.readTimeout", readTimeout)
+		}
+
+		if writeTimeout := v.GetInt("API_WRITE_TIMEOUT"); writeTimeout != 0 {
+			v.Set("api.writeTimeout", writeTimeout)
+		}
+
+		if enableSwagger := v.GetBool("API_ENABLE_SWAGGER"); enableSwagger != v.GetBool("api.enableSwagger") {
+			v.Set("api.enableSwagger", enableSwagger)
+		}
 
 		// 구성 생성
 		config = &Config{}
-		
+
 		// 데이터베이스 설정
 		config.Database.Host = v.GetString("database.host")
 		config.Database.Port = v.GetInt("database.port")
@@ -168,28 +219,38 @@ func LoadConfig() *Config {
 		config.DataRetention.Enabled = v.GetBool("dataretention.enabled")
 		config.DataRetention.CleanupInterval = v.GetInt("dataretention.cleanupinterval")
 		config.DataRetention.RetentionPeriod = v.GetInt("dataretention.retentionperiod")
+
+		config.API.Port = v.GetInt("api.port")
+		config.API.Host = v.GetString("api.host")
+		config.API.BasePath = v.GetString("api.basePath")
+		config.API.AllowedOrigins = v.GetStringSlice("api.allowedOrigins")
+		config.API.AllowCredentials = v.GetBool("api.allowCredentials")
+		config.API.ReadTimeout = v.GetInt("api.readTimeout")
+		config.API.WriteTimeout = v.GetInt("api.writeTimeout")
+		config.API.EnableSwagger = v.GetBool("api.enableSwagger")
+
 	})
 
 	log := zerolog.New(os.Stdout).With().Timestamp().Logger()
 	log.Info().
-			Str("database.host", config.Database.Host).
-			Int("database.port", config.Database.Port).
-			Str("database.user", config.Database.User).
-			Str("database.dbname", config.Database.DBName).
-			Int("database.maxconns", config.Database.MaxConns).
-			Strs("kafka.brokers", config.Kafka.Brokers).
-			Str("kafka.groupid", config.Kafka.GroupID).
-			Str("kafka.clientid", config.Kafka.ClientID).
-			Str("kafka.tracestopic", config.Kafka.TracesTopic).
-			Str("kafka.logstopic", config.Kafka.LogsTopic).
-			Int("kafka.batchsize", config.Kafka.BatchSize).
-			Int("kafka.flushinterval", config.Kafka.FlushInterval).
-			Str("logger.level", config.Logger.Level).
-			Bool("logger.isdev", config.Logger.IsDev).
-			Bool("dataretention.enabled", config.DataRetention.Enabled).
-			Int("dataretention.cleanupinterval", config.DataRetention.CleanupInterval).
-			Int("dataretention.retentionperiod", config.DataRetention.RetentionPeriod).			
-			Msg("설정 로드 완료")
+		Str("database.host", config.Database.Host).
+		Int("database.port", config.Database.Port).
+		Str("database.user", config.Database.User).
+		Str("database.dbname", config.Database.DBName).
+		Int("database.maxconns", config.Database.MaxConns).
+		Strs("kafka.brokers", config.Kafka.Brokers).
+		Str("kafka.groupid", config.Kafka.GroupID).
+		Str("kafka.clientid", config.Kafka.ClientID).
+		Str("kafka.tracestopic", config.Kafka.TracesTopic).
+		Str("kafka.logstopic", config.Kafka.LogsTopic).
+		Int("kafka.batchsize", config.Kafka.BatchSize).
+		Int("kafka.flushinterval", config.Kafka.FlushInterval).
+		Str("logger.level", config.Logger.Level).
+		Bool("logger.isdev", config.Logger.IsDev).
+		Bool("dataretention.enabled", config.DataRetention.Enabled).
+		Int("dataretention.cleanupinterval", config.DataRetention.CleanupInterval).
+		Int("dataretention.retentionperiod", config.DataRetention.RetentionPeriod).
+		Msg("설정 로드 완료")
 
 	return config
 }

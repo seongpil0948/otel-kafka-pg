@@ -1,0 +1,785 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "OpenTelemetry 텔레메트리 데이터를 위한 RESTful API 서비스",
+        "title": "OpenTelemetry API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support Team",
+            "url": "http://example.org/support",
+            "email": "support@example.org"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api",
+    "paths": {
+        "/logs": {
+            "get": {
+                "description": "필터 조건에 맞는 로그 목록을 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "로그 목록 조회",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "시작 시간 (밀리초 타임스탬프)",
+                        "name": "startTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "종료 시간 (밀리초 타임스탬프)",
+                        "name": "endTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "서비스 이름",
+                        "name": "serviceName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "심각도 (INFO, WARN, ERROR, FATAL 등)",
+                        "name": "severity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "트레이스 ID가 있는 로그만 필터링",
+                        "name": "hasTrace",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "검색어",
+                        "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "한 페이지당 항목 수",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "오프셋",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.LogsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/logs/summary": {
+            "get": {
+                "description": "특정 기간의 로그에 대한 요약 정보를 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "로그 요약 정보 조회",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "시작 시간 (밀리초 타임스탬프)",
+                        "name": "startTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "종료 시간 (밀리초 타임스탬프)",
+                        "name": "endTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "서비스 이름(선택적)",
+                        "name": "serviceName",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/logs/trace/{traceId}": {
+            "get": {
+                "description": "특정 트레이스 ID와 관련된 로그를 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "트레이스 ID로 관련 로그 조회",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Trace ID",
+                        "name": "traceId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.LogsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/services": {
+            "get": {
+                "description": "서비스별 성능 지표를 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "서비스 지표 조회",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "시작 시간 (밀리초 타임스탬프)",
+                        "name": "startTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "종료 시간 (밀리초 타임스탬프)",
+                        "name": "endTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "서비스 이름(선택적)",
+                        "name": "serviceName",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ServiceMetricsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/traces": {
+            "get": {
+                "description": "필터 조건에 맞는 트레이스 목록을 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traces"
+                ],
+                "summary": "트레이스 목록 조회",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "시작 시간 (밀리초 타임스탬프)",
+                        "name": "startTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "종료 시간 (밀리초 타임스탬프)",
+                        "name": "endTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "서비스 이름",
+                        "name": "serviceName",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "상태 (OK, ERROR 등)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "최소 지속 시간 (밀리초)",
+                        "name": "minDuration",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "최대 지속 시간 (밀리초)",
+                        "name": "maxDuration",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "검색어",
+                        "name": "query",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "한 페이지당 항목 수",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "오프셋",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TracesResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/traces/{traceId}": {
+            "get": {
+                "description": "특정 트레이스 ID에 대한 상세 정보를 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traces"
+                ],
+                "summary": "트레이스 ID로 상세 정보 조회",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Trace ID",
+                        "name": "traceId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TraceDetailResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ErrorInfo": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.LogsResponse": {
+            "type": "object",
+            "properties": {
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_log_domain.LogItem"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Pagination"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "severities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "timeRange": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TimeRange"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Pagination": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ErrorInfo"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ServiceMetric": {
+            "type": "object",
+            "properties": {
+                "avgLatency": {
+                    "type": "number"
+                },
+                "errorCount": {
+                    "type": "integer"
+                },
+                "errorRate": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "p95Latency": {
+                    "type": "number"
+                },
+                "p99Latency": {
+                    "type": "number"
+                },
+                "requestCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ServiceMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "avgLatency": {
+                    "type": "number"
+                },
+                "errorPercentage": {
+                    "type": "number"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.ServiceMetric"
+                    }
+                },
+                "timeRange": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TimeRange"
+                },
+                "totalErrors": {
+                    "type": "integer"
+                },
+                "totalRequests": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TimeRange": {
+            "type": "object",
+            "properties": {
+                "endTime": {
+                    "type": "integer"
+                },
+                "startTime": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TraceDetailResponse": {
+            "type": "object",
+            "properties": {
+                "relatedLogs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_log_domain.LogItem"
+                    }
+                },
+                "trace": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.Trace"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TracesResponse": {
+            "type": "object",
+            "properties": {
+                "pagination": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Pagination"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "timeRange": {
+                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.TimeRange"
+                },
+                "totalDuration": {
+                    "type": "integer"
+                },
+                "traces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.TraceItem"
+                    }
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_log_domain.LogItem": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "spanId": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "integer"
+                },
+                "traceId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.Span": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "duration": {
+                    "type": "number"
+                },
+                "endTime": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parentSpanId": {
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "spanId": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "traceId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.Trace": {
+            "type": "object",
+            "properties": {
+                "endTime": {
+                    "type": "integer"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "spans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.Span"
+                    }
+                },
+                "startTime": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "traceId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.TraceItem": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "duration": {
+                    "type": "number"
+                },
+                "endTime": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parentSpanId": {
+                    "type": "string"
+                },
+                "serviceName": {
+                    "type": "string"
+                },
+                "spanId": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "traceId": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    },
+    "externalDocs": {
+        "description": "OpenTelemetry 설명 문서",
+        "url": "https://opentelemetry.io/docs/"
+    }
+}

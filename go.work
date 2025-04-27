@@ -1,13 +1,15 @@
-go 1.24
+go 1.24.2
 
 use (
 	./cmd/app
 	./cmd/healthcheck
+	./docs
+	./modules/api
+	./modules/cleanup
 	./modules/common
 	./modules/kafka
 	./modules/kafka/consumer
 	./modules/kafka/processor
 	./modules/log
 	./modules/trace
-	./modules/cleanup
 )

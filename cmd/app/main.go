@@ -1,3 +1,25 @@
+//	@title			OpenTelemetry API
+//	@version		1.0.0
+//	@description	OpenTelemetry 텔레메트리 데이터를 위한 RESTful API 서비스
+//	@termsOfService	http://swagger.io/terms/
+
+//	@contact.name	API Support Team
+//	@contact.url	http://example.org/support
+//	@contact.email	support@example.org
+
+//	@license.name	Apache 2.0
+//	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
+
+//	@host		localhost:8080
+//	@BasePath	/api
+
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						Authorization
+
+//	@externalDocs.description	OpenTelemetry 설명 문서
+//	@externalDocs.url			https://opentelemetry.io/docs/
+
 package main
 
 import (
@@ -5,8 +27,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/seongpil0948/otel-kafka-pg/modules/cleanup" // 추가된 import
+	"github.com/seongpil0948/otel-kafka-pg/modules/api"
+	"github.com/seongpil0948/otel-kafka-pg/modules/cleanup"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/config"
 	commonDB "github.com/seongpil0948/otel-kafka-pg/modules/common/db"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
@@ -57,7 +81,7 @@ func main() {
 	// 5. 저장소 및 서비스 계층 설정
 	logRepo := repository.NewLogRepository(database)
 	traceRepo := traceRepository.NewTraceRepository(database)
-	
+
 	logSvc := logService.NewLogService(logRepo)
 	traceSvc := traceService.NewTraceService(traceRepo)
 
@@ -78,9 +102,18 @@ func main() {
 	}
 	log.Info().Msg("Kafka 컨슈머가 실행 중입니다")
 
-	// 9. 애플리케이션 상태 로깅
+	// 9. API 서버 설정 및 시작
+	apiServer := api.NewServer(cfg, log, database)
+	go func() {
+		if err := apiServer.Start(); err != nil {
+			log.Error().Err(err).Msg("API 서버 시작 실패")
+		}
+	}()
+
+	// 10. 애플리케이션 상태 로깅
 	log.Info().Msg("OpenTelemetry 텔레메트리 백엔드가 정상적으로 실행 중입니다")
 	log.Info().Msg("프로토콜 버퍼를 사용하여 로그 및 트레이스 데이터 처리 중...")
+	log.Info().Int("port", cfg.API.Port).Msg("API 서버가 실행 중입니다")
 
 	// 종료 시그널 처리
 	sigCh := make(chan os.Signal, 1)
@@ -90,12 +123,24 @@ func main() {
 	sig := <-sigCh
 	log.Info().Str("signal", sig.String()).Msg("종료 신호 수신, 정상 종료를 시작합니다")
 
-	// 10. 정상 종료 처리 
-	shutdown(ctx, database, kafkaConsumer, cleanupSvc, log)
+	// 11. 정상 종료 처리
+	shutdown(ctx, database, kafkaConsumer, cleanupSvc, apiServer, log)
 }
 
 // shutdown은 애플리케이션을 정상적으로 종료합니다.
-func shutdown(ctx context.Context, database commonDB.Database, kafkaConsumer consumer.Consumer, cleanupSvc cleanup.CleanupService, log logger.Logger) {
+func shutdown(ctx context.Context, database commonDB.Database, kafkaConsumer consumer.Consumer, cleanupSvc cleanup.CleanupService, apiServer *api.Server, log logger.Logger) {
+	// 종료 컨텍스트 생성
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// API 서버 종료
+	log.Info().Msg("API 서버 종료 중...")
+	if err := apiServer.Stop(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("API 서버 종료 실패")
+	} else {
+		log.Info().Msg("API 서버가 정상적으로 종료되었습니다")
+	}
+
 	// 데이터 정리 서비스 종료
 	log.Info().Msg("데이터 정리 서비스 종료 중...")
 	if err := cleanupSvc.Stop(); err != nil {
