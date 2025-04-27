@@ -1,5 +1,8 @@
 .PHONY: build run test clean proto docker-build docker-compose-up docker-compose-down
 
+-include .env
+export
+
 # 기본 변수 설정
 BINARY_NAME=telemetry-backend
 GO_BUILD_ENV=CGO_ENABLED=1

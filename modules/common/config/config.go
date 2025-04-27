@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
@@ -42,7 +43,6 @@ type Config struct {
 	API struct {
 		Port             int      `json:"port"`
 		Host             string   `json:"host"`
-		BasePath         string   `json:"basePath"`
 		AllowedOrigins   []string `json:"allowedOrigins"`
 		AllowCredentials bool     `json:"allowCredentials"`
 		ReadTimeout      int      `json:"readTimeout"`
@@ -90,7 +90,6 @@ func LoadConfig() *Config {
 
 		v.SetDefault("api.port", 8080)
 		v.SetDefault("api.host", "")
-		v.SetDefault("api.basePath", "/api")
 		v.SetDefault("api.allowedOrigins", []string{"*"})
 		v.SetDefault("api.allowCredentials", true)
 		v.SetDefault("api.readTimeout", 10)  // 10초
@@ -167,10 +166,6 @@ func LoadConfig() *Config {
 			v.Set("api.host", apiHost)
 		}
 
-		if apiBasePath := v.GetString("API_BASE_PATH"); apiBasePath != "" {
-			v.Set("api.basePath", apiBasePath)
-		}
-
 		if origins := v.GetString("API_ALLOWED_ORIGINS"); origins != "" {
 			v.Set("api.allowedOrigins", strings.Split(origins, ","))
 		}
@@ -186,7 +181,8 @@ func LoadConfig() *Config {
 		if writeTimeout := v.GetInt("API_WRITE_TIMEOUT"); writeTimeout != 0 {
 			v.Set("api.writeTimeout", writeTimeout)
 		}
-
+		// TODO: setDefault is not working
+		log.Debug().Bool("v.GetBool(API_ENABLE_SWAGGER)", v.GetBool("api.enableSwagger")).Msg("API_ENABLE_SWAGGER 값 확인 환경변수 미설정시 False")
 		if enableSwagger := v.GetBool("API_ENABLE_SWAGGER"); enableSwagger != v.GetBool("api.enableSwagger") {
 			v.Set("api.enableSwagger", enableSwagger)
 		}
@@ -222,7 +218,6 @@ func LoadConfig() *Config {
 
 		config.API.Port = v.GetInt("api.port")
 		config.API.Host = v.GetString("api.host")
-		config.API.BasePath = v.GetString("api.basePath")
 		config.API.AllowedOrigins = v.GetStringSlice("api.allowedOrigins")
 		config.API.AllowCredentials = v.GetBool("api.allowCredentials")
 		config.API.ReadTimeout = v.GetInt("api.readTimeout")

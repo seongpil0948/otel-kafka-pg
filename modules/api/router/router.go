@@ -59,7 +59,7 @@ func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceServic
 	})
 
 	// API 그룹
-	api := router.Group(cfg.API.BasePath)
+	api := router.Group("/api")
 	{
 		// 텔레메트리 API 그룹
 		telemetry := api.Group("/telemetry")
@@ -89,6 +89,7 @@ func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceServic
 
 	// Swagger 문서화 설정
 	if cfg.API.EnableSwagger {
+		log.Info().Str("api.basePath", router.BasePath()).Msg("Swagger 문서화 활성화")
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
 
