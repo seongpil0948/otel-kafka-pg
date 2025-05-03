@@ -1,10 +1,11 @@
-.PHONY: build run test clean proto docker-build docker-compose-up docker-compose-down
+.PHONY: build run test clean proto docker-build docker-compose-up docker-compose-down build-mcp run-mcp
 
 -include .env
 export
 
 # 기본 변수 설정
 BINARY_NAME=telemetry-backend
+MCP_BINARY_NAME=telemetry-mcp
 GO_BUILD_ENV=CGO_ENABLED=1
 GO_FILES=$(shell find . -type f -name "*.go" -not -path "./proto/*")
 
@@ -13,9 +14,20 @@ build:
 	$(GO_BUILD_ENV) go build -o ./bin/$(BINARY_NAME) ./cmd/app/main.go
 	$(GO_BUILD_ENV) go build -o ./bin/healthcheck ./cmd/healthcheck/main.go
 
+# MCP 서버 빌드
+build-mcp:
+	$(GO_BUILD_ENV) go build -o ./bin/$(MCP_BINARY_NAME) ./cmd/mcp/main.go
+
+# 모든 실행 파일 빌드
+build-all: build build-mcp
+
 # 실행
 run:
 	$(GO_BUILD_ENV) go run ./cmd/app/main.go
+
+# MCP 서버 실행
+run-mcp:
+	$(GO_BUILD_ENV) go run ./cmd/mcp/main.go
 
 # 단위 테스트
 test:
@@ -29,9 +41,6 @@ lint:
 clean:
 	rm -rf ./bin/*
 
-
-
-
 # Docker 이미지 빌드
 docker-build:
 	docker build -t $(BINARY_NAME):latest .
@@ -40,13 +49,14 @@ docker-build:
 docker-compose-up:
 	docker-compose up -d --build --remove-orphans --force-recreate
 	@echo "Docker Compose가 실행되었습니다."
+
 up-db:
 	docker-compose up -d --build --remove-orphans --force-recreate pg
 	@echo "Docker Compose DB가 실행되었습니다."
+
 up-be:
 	docker-compose up -d --build --remove-orphans --force-recreate telemetry-backend
 	@echo "Docker Compose BE가 실행되었습니다."
-
 
 # Docker Compose 중지
 docker-compose-down:
@@ -61,6 +71,12 @@ dev-setup:
 	@echo "필수 도구 설치 완료"
 	@echo "  - Windows: GitHub에서 릴리스 파일 다운로드"
 
+# MCP 의존성 설치
+mcp-setup:
+	go get -u github.com/mark3labs/mcp-go@latest
+	go get -u github.com/xanzy/go-gitlab@latest
+	@echo "MCP 의존성 설치 완료"
+
 # 실행 로그 확인
 logs:
 	docker-compose logs -f
@@ -68,7 +84,6 @@ logs:
 # DB 마이그레이션 실행 (필요시)
 db-init:
 	$(GO_BUILD_ENV) go run ./cmd/app/main.go --init-db-only
-
 
 # Swagger 문서 생성
 swagger:

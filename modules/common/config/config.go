@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
@@ -35,11 +34,13 @@ type Config struct {
 		Level string
 		IsDev bool
 	}
+
 	DataRetention struct {
 		Enabled         bool
 		CleanupInterval int // 정리 작업 주기(분)
 		RetentionPeriod int // 데이터 보존 기간(일)
 	}
+
 	API struct {
 		Port             int      `json:"port"`
 		Host             string   `json:"host"`
@@ -49,6 +50,9 @@ type Config struct {
 		WriteTimeout     int      `json:"writeTimeout"`
 		EnableSwagger    bool     `json:"enableSwagger"`
 	}
+
+	// MCP 서버 설정 추가
+	MCP MCPConfig
 }
 
 var (
@@ -95,6 +99,11 @@ func LoadConfig() *Config {
 		v.SetDefault("api.readTimeout", 10)  // 10초
 		v.SetDefault("api.writeTimeout", 30) // 30초
 		v.SetDefault("api.enableSwagger", true)
+
+		// MCP 설정 기본값
+		v.SetDefault("mcp.port", 8090)
+		v.SetDefault("mcp.log_enabled", false)
+		v.SetDefault("mcp.enabled_tools", []string{})
 
 		// 환경 변수에서 개별 설정 가져오기
 		if host := v.GetString("POSTGRES_HOST"); host != "" {
@@ -181,10 +190,38 @@ func LoadConfig() *Config {
 		if writeTimeout := v.GetInt("API_WRITE_TIMEOUT"); writeTimeout != 0 {
 			v.Set("api.writeTimeout", writeTimeout)
 		}
-		// TODO: setDefault is not working
-		log.Debug().Bool("v.GetBool(API_ENABLE_SWAGGER)", v.GetBool("api.enableSwagger")).Msg("API_ENABLE_SWAGGER 값 확인 환경변수 미설정시 False")
+
 		if enableSwagger := v.GetBool("API_ENABLE_SWAGGER"); enableSwagger != v.GetBool("api.enableSwagger") {
 			v.Set("api.enableSwagger", enableSwagger)
+		}
+
+		// MCP 설정
+		if mcpPort := v.GetInt("MCP_PORT"); mcpPort != 0 {
+			v.Set("mcp.port", mcpPort)
+		}
+
+		if mcpLogEnabled := v.GetBool("MCP_LOG_ENABLED"); mcpLogEnabled {
+			v.Set("mcp.log_enabled", mcpLogEnabled)
+		}
+
+		if gitlabToken := v.GetString("GITLAB_TOKEN"); gitlabToken != "" {
+			v.Set("mcp.gitlab_token", gitlabToken)
+		}
+
+		if gitlabURL := v.GetString("GITLAB_URL"); gitlabURL != "" {
+			v.Set("mcp.gitlab_url", gitlabURL)
+		}
+
+		if notionToken := v.GetString("NOTION_TOKEN"); notionToken != "" {
+			v.Set("mcp.notion_token", notionToken)
+		}
+
+		if figmaToken := v.GetString("FIGMA_TOKEN"); figmaToken != "" {
+			v.Set("mcp.figma_token", figmaToken)
+		}
+
+		if enabledTools := v.GetString("MCP_ENABLED_TOOLS"); enabledTools != "" {
+			v.Set("mcp.enabled_tools", strings.Split(enabledTools, ","))
 		}
 
 		// 구성 생성
@@ -224,6 +261,14 @@ func LoadConfig() *Config {
 		config.API.WriteTimeout = v.GetInt("api.writeTimeout")
 		config.API.EnableSwagger = v.GetBool("api.enableSwagger")
 
+		// MCP 설정
+		config.MCP.Port = v.GetInt("mcp.port")
+		config.MCP.LogEnabled = v.GetBool("mcp.log_enabled")
+		config.MCP.GitLabToken = v.GetString("mcp.gitlab_token")
+		config.MCP.GitLabURL = v.GetString("mcp.gitlab_url")
+		config.MCP.NotionToken = v.GetString("mcp.notion_token")
+		config.MCP.FigmaToken = v.GetString("mcp.figma_token")
+		config.MCP.EnabledTools = v.GetStringSlice("mcp.enabled_tools")
 	})
 
 	log := zerolog.New(os.Stdout).With().Timestamp().Logger()
@@ -245,6 +290,8 @@ func LoadConfig() *Config {
 		Bool("dataretention.enabled", config.DataRetention.Enabled).
 		Int("dataretention.cleanupinterval", config.DataRetention.CleanupInterval).
 		Int("dataretention.retentionperiod", config.DataRetention.RetentionPeriod).
+		Int("mcp.port", config.MCP.Port).
+		Bool("mcp.log_enabled", config.MCP.LogEnabled).
 		Msg("설정 로드 완료")
 
 	return config

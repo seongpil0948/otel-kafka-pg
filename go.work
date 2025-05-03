@@ -3,6 +3,7 @@ go 1.24.2
 use (
 	./cmd/app
 	./cmd/healthcheck
+	./cmd/mcp
 	./docs
 	./modules/api
 	./modules/cleanup
@@ -11,5 +12,6 @@ use (
 	./modules/kafka/consumer
 	./modules/kafka/processor
 	./modules/log
+	./modules/mcp
 	./modules/trace
 )
