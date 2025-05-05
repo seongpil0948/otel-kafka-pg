@@ -7,8 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/seongpil0948/otel-kafka-pg/modules/api/controller"
 	"github.com/seongpil0948/otel-kafka-pg/modules/api/middleware"
+	"github.com/seongpil0948/otel-kafka-pg/modules/common/cache"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/config"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
+	"github.com/seongpil0948/otel-kafka-pg/modules/common/redis"
 	logService "github.com/seongpil0948/otel-kafka-pg/modules/log/service"
 	traceService "github.com/seongpil0948/otel-kafka-pg/modules/trace/service"
 	swaggerFiles "github.com/swaggo/files"
@@ -17,6 +19,21 @@ import (
 
 // SetupRouter는 API 라우터 및 미들웨어를 설정합니다
 func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceService.TraceService, logService logService.LogService) *gin.Engine {
+	// 캐시 서비스 초기화
+	cacheService, err := cache.NewCacheService()
+	if err != nil {
+		log.Error().Err(err).Msg("캐시 서비스 초기화 실패")
+	}
+
+	// Redis 클라이언트 초기화
+	var redisClient redis.Client
+	if cfg.Redis.EnableCache {
+		redisClient, err = redis.GetInstance()
+		if err != nil {
+			log.Error().Err(err).Msg("Redis 클라이언트 초기화 실패")
+		}
+	}
+
 	// 환경에 따른 Gin 모드 설정
 	if cfg.Logger.IsDev {
 		gin.SetMode(gin.DebugMode)
@@ -30,6 +47,7 @@ func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceServic
 	// 미들웨어 설정
 	router.Use(middleware.ErrorHandler(log))
 	router.Use(middleware.RequestLogger(log))
+	router.Use(gin.Recovery())
 
 	// CORS 미들웨어 설정
 	corsConfig := cors.DefaultConfig()
@@ -38,6 +56,11 @@ func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceServic
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"}
 	corsConfig.AllowCredentials = cfg.API.AllowCredentials
 	router.Use(cors.New(corsConfig))
+
+	if cfg.Redis.EnableCache {
+		router.Use(middleware.CachingMiddleware(cacheService, log))
+		router.Use(middleware.InvalidateCacheMiddleware(cacheService, log))
+	}
 
 	// 컨트롤러 생성
 	traceController := controller.NewTraceController(traceService, log)

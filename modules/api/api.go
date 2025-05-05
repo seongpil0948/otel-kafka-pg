@@ -7,9 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/seongpil0948/otel-kafka-pg/modules/api/router"
+	"github.com/seongpil0948/otel-kafka-pg/modules/common/cache"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/config"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/db"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
+	"github.com/seongpil0948/otel-kafka-pg/modules/common/redis"
 	"github.com/seongpil0948/otel-kafka-pg/modules/log/repository"
 	logService "github.com/seongpil0948/otel-kafka-pg/modules/log/service"
 	traceRepository "github.com/seongpil0948/otel-kafka-pg/modules/trace/repository"
@@ -26,6 +28,8 @@ type Server struct {
 	Log          logger.Logger
 	TraceService traceService.TraceService
 	LogService   logService.LogService
+	cacheService cache.CacheService
+	redisClient  redis.Client
 }
 
 // NewServer는 새 API 서버 인스턴스를 생성합니다

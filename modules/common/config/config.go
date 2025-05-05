@@ -35,6 +35,17 @@ type Config struct {
 		Level string
 		IsDev bool
 	}
+
+	// Redis 설정 추가
+	Redis struct {
+		Address     string
+		Password    string
+		DB          int
+		PoolSize    int
+		TTL         int // 캐시 TTL (초)
+		EnableCache bool
+	}
+
 	DataRetention struct {
 		Enabled         bool
 		CleanupInterval int // 정리 작업 주기(분)
@@ -80,6 +91,14 @@ func LoadConfig() *Config {
 		v.SetDefault("kafka.logstopic", "onpremise.theshop.oltp.dev.log")
 		v.SetDefault("kafka.batchsize", 100)
 		v.SetDefault("kafka.flushinterval", 5000)
+
+		// Redis 기본 설정 추가
+		v.SetDefault("redis.address", "localhost:6379")
+		v.SetDefault("redis.password", "")
+		v.SetDefault("redis.db", 0)
+		v.SetDefault("redis.poolsize", 10)
+		v.SetDefault("redis.ttl", 3600) // 1시간(초)
+		v.SetDefault("redis.enablecache", true)
 
 		v.SetDefault("logger.level", "info")
 		v.SetDefault("logger.isdev", false)
@@ -137,6 +156,26 @@ func LoadConfig() *Config {
 		}
 		if flushInterval := v.GetInt("FLUSH_INTERVAL"); flushInterval != 0 {
 			v.Set("kafka.flushinterval", flushInterval)
+		}
+
+		// Redis 환경 변수 설정 추가
+		if redisAddr := v.GetString("REDIS_ADDRESS"); redisAddr != "" {
+			v.Set("redis.address", redisAddr)
+		}
+		if redisPassword := v.GetString("REDIS_PASSWORD"); redisPassword != "" {
+			v.Set("redis.password", redisPassword)
+		}
+		if redisDB := v.GetInt("REDIS_DB"); redisDB != 0 {
+			v.Set("redis.db", redisDB)
+		}
+		if redisPoolSize := v.GetInt("REDIS_POOL_SIZE"); redisPoolSize != 0 {
+			v.Set("redis.poolsize", redisPoolSize)
+		}
+		if redisTTL := v.GetInt("REDIS_TTL"); redisTTL != 0 {
+			v.Set("redis.ttl", redisTTL)
+		}
+		if redisEnableCache := v.GetBool("REDIS_ENABLE_CACHE"); redisEnableCache != v.GetBool("redis.enablecache") {
+			v.Set("redis.enablecache", redisEnableCache)
 		}
 
 		// 로거 설정
@@ -207,6 +246,14 @@ func LoadConfig() *Config {
 		config.Kafka.BatchSize = v.GetInt("kafka.batchsize")
 		config.Kafka.FlushInterval = v.GetInt("kafka.flushinterval")
 
+		// Redis 설정
+		config.Redis.Address = v.GetString("redis.address")
+		config.Redis.Password = v.GetString("redis.password")
+		config.Redis.DB = v.GetInt("redis.db")
+		config.Redis.PoolSize = v.GetInt("redis.poolsize")
+		config.Redis.TTL = v.GetInt("redis.ttl")
+		config.Redis.EnableCache = v.GetBool("redis.enablecache")
+
 		// 로거 설정
 		config.Logger.Level = v.GetString("logger.level")
 		config.Logger.IsDev = v.GetBool("logger.isdev")
@@ -240,6 +287,12 @@ func LoadConfig() *Config {
 		Str("kafka.logstopic", config.Kafka.LogsTopic).
 		Int("kafka.batchsize", config.Kafka.BatchSize).
 		Int("kafka.flushinterval", config.Kafka.FlushInterval).
+		// Redis 로그 추가
+		Str("redis.address", config.Redis.Address).
+		Int("redis.db", config.Redis.DB).
+		Int("redis.poolsize", config.Redis.PoolSize).
+		Int("redis.ttl", config.Redis.TTL).
+		Bool("redis.enablecache", config.Redis.EnableCache).
 		Str("logger.level", config.Logger.Level).
 		Bool("logger.isdev", config.Logger.IsDev).
 		Bool("dataretention.enabled", config.DataRetention.Enabled).

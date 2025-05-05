@@ -5,8 +5,11 @@ use (
 	./cmd/healthcheck
 	./docs
 	./modules/api
+	./modules/api/middleware
 	./modules/cleanup
 	./modules/common
+	./modules/common/cache
+	./modules/common/redis
 	./modules/kafka
 	./modules/kafka/consumer
 	./modules/kafka/processor
