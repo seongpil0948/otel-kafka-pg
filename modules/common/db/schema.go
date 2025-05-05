@@ -8,14 +8,14 @@ import (
 func InitializeSchema(db Database) error {
 	log := logger.GetLogger()
 	log.Info().Msg("데이터베이스 스키마 초기화 시작")
-	
+
 	// 트랜잭션 시작
 	tx, err := db.Begin()
 	if err != nil {
 		log.Error().Err(err).Msg("트랜잭션 시작 실패")
 		return err
 	}
-	
+
 	// 롤백 함수 준비
 	defer func() {
 		if err != nil {
@@ -23,7 +23,7 @@ func InitializeSchema(db Database) error {
 			log.Error().Err(err).Msg("트랜잭션 롤백됨")
 		}
 	}()
-	
+
 	// 스키마 SQL 실행
 	schemaSql := `
 -- 테이블이 이미 존재하면 삭제
@@ -55,6 +55,10 @@ CREATE INDEX idx_traces_trace_id ON traces(trace_id);
 CREATE INDEX idx_traces_service_name ON traces(service_name);
 CREATE INDEX idx_traces_start_time ON traces(start_time);
 CREATE INDEX idx_traces_status ON traces(status);
+CREATE INDEX idx_traces_parent_span_id ON traces(parent_span_id);
+CREATE INDEX idx_traces_attributes_gin ON traces USING GIN (attributes);
+CREATE INDEX idx_traces_service_name_start_time ON traces(service_name, start_time);
+
 
 -- 로그 테이블
 CREATE TABLE logs (
@@ -73,6 +77,7 @@ CREATE INDEX idx_logs_timestamp ON logs(timestamp);
 CREATE INDEX idx_logs_service_name ON logs(service_name);
 CREATE INDEX idx_logs_severity ON logs(severity);
 CREATE INDEX idx_logs_trace_id ON logs(trace_id);
+CREATE INDEX idx_logs_attributes_gin ON logs USING GIN (attributes);
 
 -- 메트릭 테이블
 CREATE TABLE metrics (
@@ -95,6 +100,8 @@ CREATE INDEX idx_metrics_timestamp ON metrics(timestamp);
 CREATE INDEX idx_metrics_service_name ON metrics(service_name);
 CREATE INDEX idx_metrics_metric_name ON metrics(metric_name);
 CREATE INDEX idx_metrics_type ON metrics(type);
+CREATE INDEX idx_metrics_attributes_gin ON metrics USING GIN (attributes);
+CREATE INDEX idx_metrics_labels_gin ON metrics USING GIN (labels);
 
 -- 서비스 메트릭 집계 테이블 (성능 향상용)
 CREATE TABLE service_metrics (
@@ -157,20 +164,20 @@ WHERE
 ORDER BY
   l.timestamp DESC;
 `
-	
+
 	_, err = tx.Exec(schemaSql)
 	if err != nil {
 		log.Error().Err(err).Msg("스키마 SQL 실행 실패")
 		return err
 	}
-	
+
 	// 트랜잭션 커밋
 	err = tx.Commit()
 	if err != nil {
 		log.Error().Err(err).Msg("트랜잭션 커밋 실패")
 		return err
 	}
-	
+
 	log.Info().Msg("데이터베이스 스키마 초기화 완료")
 	return nil
 }
@@ -185,12 +192,12 @@ func IsDatabaseInitialized(db Database) (bool, error) {
 			AND table_name = 'traces'
 		);
 	`
-	
+
 	err := db.QueryRow(query).Scan(&exists)
 	if err != nil {
 		logger.GetLogger().Error().Err(err).Msg("데이터베이스 초기화 확인 실패")
 		return false, err
 	}
-	
+
 	return exists, nil
 }
