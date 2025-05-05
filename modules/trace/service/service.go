@@ -18,6 +18,8 @@ type TraceService interface {
 	// 트레이스 쿼리
 	QueryTraces(filter domain.TraceFilter) (domain.TraceQueryResult, error)
 
+	GetServices(startTime, endTime int64, filter string) (domain.ServiceListResult, error)
+
 	GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error)
 }
 
@@ -58,6 +60,10 @@ func (s *TraceServiceImpl) QueryTraces(filter domain.TraceFilter) (domain.TraceQ
 	}
 
 	return s.repository.QueryTraces(filter)
+}
+
+func (s *TraceServiceImpl) GetServices(startTime, endTime int64, filter string) (domain.ServiceListResult, error) {
+	return s.repository.GetServices(startTime, endTime, filter)
 }
 
 func (s *TraceServiceImpl) GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error) {

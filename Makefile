@@ -28,6 +28,7 @@ lint:
 # 빌드 결과물 삭제
 clean:
 	rm -rf ./bin/*
+	go clean -modcache
 
 # 모든 모듈 go mod tidy 실행
 tidy:

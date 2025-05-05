@@ -1,8 +1,11 @@
 module github.com/seongpil0948/otel-kafka-pg/modules/trace
 
-go 1.24
+go 1.24.2
 
-require github.com/seongpil0948/otel-kafka-pg/modules/common v0.0.0
+require (
+	github.com/seongpil0948/otel-kafka-pg/modules/api v0.0.0-20250505092541-8ec1922b0f76
+	github.com/seongpil0948/otel-kafka-pg/modules/common v0.0.0
+)
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -16,12 +19,12 @@ require (
 	github.com/rs/zerolog v1.32.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
+	github.com/seongpil0948/otel-kafka-pg/modules/log v0.0.0-20250505092541-8ec1922b0f76 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.18.2 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect

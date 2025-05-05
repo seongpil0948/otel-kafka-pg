@@ -1,12 +1,12 @@
 module github.com/seongpil0948/otel-kafka-pg/modules/kafka/processor
 
-go 1.24
+go 1.24.2
 
 require (
 	github.com/golang/protobuf v1.5.4
 	github.com/golang/snappy v0.0.4
 	github.com/seongpil0948/otel-kafka-pg/modules/common v0.0.0
-	github.com/seongpil0948/otel-kafka-pg/modules/log v0.0.0-00010101000000-000000000000
+	github.com/seongpil0948/otel-kafka-pg/modules/log v0.0.0-20250505092541-8ec1922b0f76
 	github.com/seongpil0948/otel-kafka-pg/modules/trace v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/proto/otlp v1.5.0
 )

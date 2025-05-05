@@ -301,3 +301,60 @@ func (c *TraceController) GetServiceMetrics(ctx *gin.Context) {
 		Data:    response,
 	})
 }
+
+// GetServices godoc
+//
+//	@Summary		서비스 목록 조회
+//	@Description	모든 서비스 목록과 기본 통계 정보를 조회합니다
+//	@Tags			traces
+//	@Accept			json
+//	@Produce		json
+//	@Param			startTime	query		int		false	"시작 시간 (밀리초 타임스탬프)"
+//	@Param			endTime		query		int		false	"종료 시간 (밀리초 타임스탬프)"
+//	@Param			filter		query		string	false	"서비스명 필터링 검색어"
+//	@Success		200			{object}	dto.Response{data=traceDomain.ServiceListResult}
+//	@Failure		400			{object}	dto.Response
+//	@Failure		500			{object}	dto.Response
+//	@Router			/traces/services [get]
+func (c *TraceController) GetServices(ctx *gin.Context) {
+	// 시간 범위 파싱
+	startTimeStr := ctx.DefaultQuery("startTime", "")
+	endTimeStr := ctx.DefaultQuery("endTime", "")
+	filter := ctx.Query("filter")
+
+	// 기본 시간 범위 설정 (기본값: 최근 1시간)
+	now := time.Now().UnixMilli()
+	startTime := now - 3600000 // 1시간 전
+	endTime := now
+
+	if startTimeStr != "" {
+		if parsedTime, err := strconv.ParseInt(startTimeStr, 10, 64); err == nil {
+			startTime = parsedTime
+		}
+	}
+
+	if endTimeStr != "" {
+		if parsedTime, err := strconv.ParseInt(endTimeStr, 10, 64); err == nil {
+			endTime = parsedTime
+		}
+	}
+
+	// 서비스 목록 조회
+	result, err := c.traceService.GetServices(startTime, endTime, filter)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("서비스 목록 조회 실패")
+		ctx.JSON(http.StatusInternalServerError, dto.Response{
+			Success: false,
+			Error: &dto.ErrorInfo{
+				Code:    http.StatusInternalServerError,
+				Message: "서비스 목록을 가져오는 중 오류가 발생했습니다",
+			},
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.Response{
+		Success: true,
+		Data:    result,
+	})
+}

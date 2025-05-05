@@ -406,6 +406,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/traces/services": {
+            "get": {
+                "description": "모든 서비스 목록과 기본 통계 정보를 조회합니다",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traces"
+                ],
+                "summary": "서비스 목록 조회",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "시작 시간 (밀리초 타임스탬프)",
+                        "name": "startTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "종료 시간 (밀리초 타임스탬프)",
+                        "name": "endTime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "서비스명 필터링 검색어",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.ServiceListResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_api_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/traces/{traceId}": {
             "get": {
                 "description": "특정 트레이스 ID에 대한 상세 정보를 조회합니다",
@@ -666,6 +733,43 @@ const docTemplate = `{
                 },
                 "traceId": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.ServiceInfo": {
+            "type": "object",
+            "properties": {
+                "avgLatency": {
+                    "type": "number"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "errorCount": {
+                    "type": "integer"
+                },
+                "errorRate": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.ServiceListResult": {
+            "type": "object",
+            "properties": {
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_seongpil0948_otel-kafka-pg_modules_trace_domain.ServiceInfo"
+                    }
+                },
+                "took": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

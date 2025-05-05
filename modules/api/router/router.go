@@ -78,6 +78,7 @@ func SetupRouter(cfg *config.Config, log logger.Logger, traceService traceServic
 			{
 				traces.GET("", traceController.QueryTraces)
 				traces.GET("/:traceId", traceController.GetTraceByID)
+				traces.GET("/services", traceController.GetServices)
 			}
 
 			// 로그 관련 엔드포인트

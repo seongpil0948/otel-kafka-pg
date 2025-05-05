@@ -23,6 +23,9 @@ type TraceRepository interface {
 	// 트레이스 쿼리
 	QueryTraces(filter domain.TraceFilter) (domain.TraceQueryResult, error)
 
+	// 서비스 목록 조회
+	GetServices(startTime, endTime int64, filter string) (domain.ServiceListResult, error)
+
 	// 서비스 메트릭 조회
 	GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error)
 }
@@ -399,7 +402,88 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 	return result, nil
 }
 
-// GetServiceMetrics는 지정된 시간 범위 내의 모든 고유 서비스 메트릭을 반환합니다.
+// GetServices는 서비스 목록과 기본 통계 정보를 반환합니다.
+func (r *PostgresTraceRepository) GetServices(startTime, endTime int64, filter string) (domain.ServiceListResult, error) {
+	startQueryTime := time.Now()
+	result := domain.ServiceListResult{
+		Services: []domain.ServiceInfo{},
+		Total:    0,
+		Took:     0,
+	}
+
+	// 쿼리 파라미터 배열
+	queryParams := []interface{}{startTime, endTime}
+	paramIndex := 3
+
+	// 기본 WHERE 조건
+	whereClause := "start_time >= $1 AND start_time <= $2 AND service_name IS NOT NULL"
+
+	// 서비스명 필터 (부분 일치 지원)
+	if filter != "" {
+		whereClause += fmt.Sprintf(" AND service_name ILIKE $%d", paramIndex)
+		queryParams = append(queryParams, "%"+filter+"%")
+		paramIndex++
+	}
+
+	// 서비스 조회 쿼리
+	servicesQuery := fmt.Sprintf(`
+        SELECT 
+            service_name AS name,
+            COUNT(*) AS count,
+            COUNT(CASE WHEN status = 'ERROR' THEN 1 END) AS error_count,
+            AVG(duration) AS avg_latency
+        FROM 
+            traces
+        WHERE 
+            %s
+        GROUP BY 
+            service_name
+        ORDER BY 
+            count DESC
+        LIMIT 100
+    `, whereClause)
+
+	// 쿼리 실행
+	rows, err := r.db.Query(servicesQuery, queryParams...)
+	if err != nil {
+		return result, fmt.Errorf("failed to query services: %w", err)
+	}
+	defer rows.Close()
+
+	// 결과 처리
+	for rows.Next() {
+		var service domain.ServiceInfo
+		var count, errorCount int
+		var avgLatency float64
+
+		if err := rows.Scan(&service.Name, &count, &errorCount, &avgLatency); err != nil {
+			return result, fmt.Errorf("failed to scan service row: %w", err)
+		}
+
+		service.Count = count
+		service.ErrorCount = errorCount
+		service.AvgLatency = avgLatency
+
+		// 오류율 계산
+		if count > 0 {
+			service.ErrorRate = float64(errorCount) / float64(count) * 100
+		} else {
+			service.ErrorRate = 0
+		}
+
+		result.Services = append(result.Services, service)
+	}
+
+	// 총 서비스 수는 반환된 서비스 목록의 길이
+	result.Total = len(result.Services)
+
+	// 실행 시간 계산
+	result.Took = time.Since(startQueryTime).Milliseconds()
+
+	return result, nil
+}
+
+// GetServiceMetrics 메서드 개선 (기존 메서드 수정)
 func (r *PostgresTraceRepository) GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error) {
 	// 쿼리 파라미터 배열
 	queryParams := []interface{}{startTime, endTime}
@@ -410,8 +494,9 @@ func (r *PostgresTraceRepository) GetServiceMetrics(startTime, endTime int64, se
 
 	// 서비스명 필터 (선택적)
 	if serviceName != "" {
-		whereClause += fmt.Sprintf(" AND service_name = $%d", paramIndex)
-		queryParams = append(queryParams, serviceName)
+		// 정확한 일치 대신 부분 일치로 수정
+		whereClause += fmt.Sprintf(" AND service_name ILIKE $%d", paramIndex)
+		queryParams = append(queryParams, "%"+serviceName+"%")
 		paramIndex++
 	}
 
@@ -431,6 +516,7 @@ func (r *PostgresTraceRepository) GetServiceMetrics(startTime, endTime int64, se
             service_name
         ORDER BY 
             count DESC
+        LIMIT 50
     `, whereClause)
 
 	rows, err := r.db.Query(query, queryParams...)
