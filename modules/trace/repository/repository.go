@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seongpil0948/otel-kafka-pg/modules/api/dto"
@@ -227,11 +228,20 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 	// 기본 WHERE 조건
 	whereClause := "start_time >= $1 AND start_time <= $2"
 
-	// 서비스명 필터
-	if filter.ServiceName != nil && *filter.ServiceName != "" {
-		whereClause += fmt.Sprintf(" AND service_name = $%d", paramIndex)
-		queryParams = append(queryParams, *filter.ServiceName)
-		paramIndex++
+	// 서비스명 필터 수정
+	if len(filter.ServiceNames) > 0 {
+		placeholders := make([]string, len(filter.ServiceNames))
+		for i := range filter.ServiceNames {
+			placeholders[i] = fmt.Sprintf("$%d", paramIndex)
+			queryParams = append(queryParams, filter.ServiceNames[i])
+			paramIndex++
+		}
+		whereClause += fmt.Sprintf(" AND service_name IN (%s)", strings.Join(placeholders, ", "))
+	}
+
+	// RootSpansOnly 필터 추가
+	if filter.RootSpansOnly {
+		whereClause += " AND parent_span_id = '' OR parent_span_id IS NULL"
 	}
 
 	// 상태 필터

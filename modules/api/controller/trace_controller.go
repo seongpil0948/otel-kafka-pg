@@ -91,7 +91,7 @@ func (c *TraceController) GetTraceByID(ctx *gin.Context) {
 //	@Produce		json
 //	@Param			startTime	query		int		false	"시작 시간 (밀리초 타임스탬프)"
 //	@Param			endTime		query		int		false	"종료 시간 (밀리초 타임스탬프)"
-//	@Param			serviceName	query		string	false	"서비스 이름"
+//	@Param			serviceNames	query		string[]	false	"서비스 이름 목록"
 //	@Param			status		query		string	false	"상태 (OK, ERROR 등)"
 //	@Param			minDuration	query		int		false	"최소 지속 시간 (밀리초)"
 //	@Param			maxDuration	query		int		false	"최대 지속 시간 (밀리초)"
@@ -135,14 +135,16 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 
 	// 트레이스 필터 구성
 	filter := traceDomain.TraceFilter{
-		StartTime: params.StartTime,
-		EndTime:   params.EndTime,
-		Limit:     params.Limit,
-		Offset:    params.Offset,
+		StartTime:     params.StartTime,
+		EndTime:       params.EndTime,
+		Limit:         params.Limit,
+		Offset:        params.Offset,
+		RootSpansOnly: params.RootSpansOnly,
 	}
 
-	if params.ServiceName != "" {
-		filter.ServiceName = &params.ServiceName
+	// 여러 서비스명 처리
+	if len(params.ServiceNames) > 0 {
+		filter.ServiceNames = params.ServiceNames
 	}
 	if params.Status != "" {
 		filter.Status = &params.Status // Changed from Severity to Status

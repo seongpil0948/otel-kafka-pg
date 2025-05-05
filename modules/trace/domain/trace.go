@@ -89,15 +89,16 @@ func (s *Span) JSONToAttributes(jsonStr string) error {
 
 // TraceFilter는 트레이스 필터링 옵션을 정의합니다.
 type TraceFilter struct {
-	StartTime   int64    `json:"startTime"`
-	EndTime     int64    `json:"endTime"`
-	ServiceName *string  `json:"serviceName,omitempty"`
-	Status      *string  `json:"status,omitempty"`
-	MinDuration *float64 `json:"minDuration,omitempty"`
-	MaxDuration *float64 `json:"maxDuration,omitempty"`
-	Query       *string  `json:"query,omitempty"`
-	Limit       int      `json:"limit"`
-	Offset      int      `json:"offset"`
+	StartTime     int64    `json:"startTime"`
+	EndTime       int64    `json:"endTime"`
+	ServiceNames  []string `json:"serviceNames,omitempty"`
+	Status        *string  `json:"status,omitempty"`
+	MinDuration   *float64 `json:"minDuration,omitempty"`
+	MaxDuration   *float64 `json:"maxDuration,omitempty"`
+	Query         *string  `json:"query,omitempty"`
+	Limit         int      `json:"limit"`
+	Offset        int      `json:"offset"`
+	RootSpansOnly bool     `json:"rootSpansOnly,omitempty"`
 }
 
 // TraceQueryResult는 트레이스 쿼리 결과를 정의합니다.

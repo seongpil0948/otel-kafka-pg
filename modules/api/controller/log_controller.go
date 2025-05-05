@@ -27,6 +27,7 @@ func NewLogController(logService service.LogService, logger logger.Logger) *LogC
 }
 
 // QueryLogs godoc
+//
 //	@Summary		로그 목록 조회
 //	@Description	필터 조건에 맞는 로그 목록을 조회합니다
 //	@Tags			logs
@@ -34,7 +35,7 @@ func NewLogController(logService service.LogService, logger logger.Logger) *LogC
 //	@Produce		json
 //	@Param			startTime	query		int		false	"시작 시간 (밀리초 타임스탬프)"
 //	@Param			endTime		query		int		false	"종료 시간 (밀리초 타임스탬프)"
-//	@Param			serviceName	query		string	false	"서비스 이름"
+//	@Param			serviceNames	query		string[]	false	"서비스 이름 목록"
 //	@Param			severity	query		string	false	"심각도 (INFO, WARN, ERROR, FATAL 등)"
 //	@Param			hasTrace	query		boolean	false	"트레이스 ID가 있는 로그만 필터링"
 //	@Param			query		query		string	false	"검색어"
@@ -84,8 +85,8 @@ func (c *LogController) QueryLogs(ctx *gin.Context) {
 		Offset:    params.Offset,
 	}
 
-	if params.ServiceName != "" {
-		filter.ServiceName = &params.ServiceName
+	if len(params.ServiceNames) > 0 {
+		filter.ServiceNames = params.ServiceNames
 	}
 	if params.Severity != "" {
 		filter.Severity = &params.Severity
@@ -154,6 +155,7 @@ func (c *LogController) QueryLogs(ctx *gin.Context) {
 }
 
 // GetLogsByTraceID godoc
+//
 //	@Summary		트레이스 ID로 관련 로그 조회
 //	@Description	특정 트레이스 ID와 관련된 로그를 조회합니다
 //	@Tags			logs
@@ -260,6 +262,7 @@ func (c *LogController) GetLogsByTraceID(ctx *gin.Context) {
 }
 
 // GetLogSummary godoc
+//
 //	@Summary		로그 요약 정보 조회
 //	@Description	특정 기간의 로그에 대한 요약 정보를 조회합니다
 //	@Tags			logs
@@ -276,7 +279,6 @@ func (c *LogController) GetLogSummary(ctx *gin.Context) {
 	// 시간 범위 파싱
 	startTimeStr := ctx.DefaultQuery("startTime", "")
 	endTimeStr := ctx.DefaultQuery("endTime", "")
-	serviceName := ctx.Query("serviceName")
 
 	// 기본 시간 범위 설정 (기본값: 최근 1시간)
 	now := time.Now().UnixMilli()
@@ -300,37 +302,15 @@ func (c *LogController) GetLogSummary(ctx *gin.Context) {
 	var severityAggs []domain.SeverityAggregation
 	var err error
 
-	if serviceName != "" {
-		// 서비스가 지정된 경우 필터를 적용합니다
-		filter := domain.LogFilter{
-			StartTime:   startTime,
-			EndTime:     endTime,
-			ServiceName: &serviceName,
-		}
-		filter.ServiceName = &serviceName
-		// 집계 수행
-		serviceAggs, err = c.logService.GetServiceAggregation(startTime, endTime)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("서비스 집계 실패")
-		}
-
-		severityAggs, err = c.logService.GetSeverityAggregation(startTime, endTime)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("심각도 집계 실패")
-		}
-	} else {
-		// 서비스가 지정되지 않은 경우 전체 집계를 수행합니다
-		serviceAggs, err = c.logService.GetServiceAggregation(startTime, endTime)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("서비스 집계 실패")
-		}
-
-		severityAggs, err = c.logService.GetSeverityAggregation(startTime, endTime)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("심각도 집계 실패")
-		}
+	serviceAggs, err = c.logService.GetServiceAggregation(startTime, endTime)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("서비스 집계 실패")
 	}
 
+	severityAggs, err = c.logService.GetSeverityAggregation(startTime, endTime)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("심각도 집계 실패")
+	}
 	// 오류 발생 시 빈 배열로 설정
 	if serviceAggs == nil {
 		serviceAggs = []domain.ServiceAggregation{}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/db"
@@ -13,10 +14,10 @@ import (
 type LogRepository interface {
 	// 로그 저장
 	SaveLogs(logs []domain.LogItem) error
-	
+
 	// 로그 쿼리
 	QueryLogs(filter domain.LogFilter) (domain.LogQueryResult, error)
-	
+
 	// 로그 집계
 	GetServiceAggregation(startTime, endTime int64) ([]domain.ServiceAggregation, error)
 	GetSeverityAggregation(startTime, endTime int64) ([]domain.SeverityAggregation, error)
@@ -113,15 +114,19 @@ func (r *PostgresLogRepository) QueryLogs(filter domain.LogFilter) (domain.LogQu
 	// 쿼리 파라미터 배열
 	queryParams := []interface{}{filter.StartTime, filter.EndTime}
 	paramIndex := 3
-	
+
 	// 기본 WHERE 조건
 	whereClause := "timestamp >= $1 AND timestamp <= $2"
 
 	// 서비스명 필터
-	if filter.ServiceName != nil && *filter.ServiceName != "" {
-		whereClause += fmt.Sprintf(" AND service_name = $%d", paramIndex)
-		queryParams = append(queryParams, *filter.ServiceName)
-		paramIndex++
+	if len(filter.ServiceNames) > 0 {
+		placeholders := make([]string, len(filter.ServiceNames))
+		for i := range filter.ServiceNames {
+			placeholders[i] = fmt.Sprintf("$%d", paramIndex)
+			queryParams = append(queryParams, filter.ServiceNames[i])
+			paramIndex++
+		}
+		whereClause += fmt.Sprintf(" AND service_name IN (%s)", strings.Join(placeholders, ", "))
 	}
 
 	// 심각도 필터
@@ -304,7 +309,7 @@ func (r *PostgresLogRepository) GetServiceAggregation(startTime, endTime int64) 
 		ORDER BY count DESC
 		LIMIT 20
 	`
-	
+
 	rows, err := r.db.Query(query, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query service aggregation: %w", err)
@@ -347,7 +352,7 @@ func (r *PostgresLogRepository) GetSeverityAggregation(startTime, endTime int64)
 				ELSE 7
 			END
 	`
-	
+
 	rows, err := r.db.Query(query, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity aggregation: %w", err)

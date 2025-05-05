@@ -76,21 +76,23 @@ type SeverityAggregation struct {
 
 // LogFilter는 로그 필터링 옵션을 정의합니다.
 type LogFilter struct {
-	StartTime   int64   `json:"startTime"`
-	EndTime     int64   `json:"endTime"`
-	ServiceName *string `json:"serviceName,omitempty"`
-	Severity    *string `json:"severity,omitempty"`
-	HasTrace    bool    `json:"hasTrace"`
-	Query       *string `json:"query,omitempty"`
-	Limit       int     `json:"limit"`
-	Offset      int     `json:"offset"`
+	StartTime    int64    `json:"startTime"`
+	EndTime      int64    `json:"endTime"`
+	ServiceNames []string `json:"serviceNames,omitempty"`
+
+	Severity      *string `json:"severity,omitempty"`
+	HasTrace      bool    `json:"hasTrace"`
+	Query         *string `json:"query,omitempty"`
+	Limit         int     `json:"limit"`
+	Offset        int     `json:"offset"`
+	RootSpansOnly bool    `json:"rootSpansOnly,omitempty"`
 }
 
 // LogQueryResult는 로그 쿼리 결과를 정의합니다.
 type LogQueryResult struct {
-	Logs       []LogItem            `json:"logs"`
-	Services   []ServiceAggregation `json:"services"`
+	Logs       []LogItem             `json:"logs"`
+	Services   []ServiceAggregation  `json:"services"`
 	Severities []SeverityAggregation `json:"severities"`
-	Total      int                  `json:"total"`
-	Took       int64                `json:"took"`
+	Total      int                   `json:"total"`
+	Took       int64                 `json:"took"`
 }

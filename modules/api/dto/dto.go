@@ -78,25 +78,27 @@ type ServiceMetric struct {
 
 // LogFilter 로그 필터링 매개변수
 type LogFilterParams struct {
-	StartTime   int64  `form:"startTime"`
-	EndTime     int64  `form:"endTime"`
-	ServiceName string `form:"serviceName"`
-	Severity    string `form:"severity"`
-	HasTrace    bool   `form:"hasTrace"`
-	Query       string `form:"query"`
-	Limit       int    `form:"limit,default=20"`
-	Offset      int    `form:"offset,default=0"`
+	StartTime     int64    `form:"startTime"`
+	EndTime       int64    `form:"endTime"`
+	ServiceNames  []string `form:"serviceName"`
+	Severity      string   `form:"severity"`
+	HasTrace      bool     `form:"hasTrace"`
+	Query         string   `form:"query"`
+	Limit         int      `form:"limit,default=20"`
+	Offset        int      `form:"offset,default=0"`
+	RootSpansOnly bool     `form:"rootSpansOnly"` // 루트 스팬만 필터링 옵션 추가
 }
 
 // TraceFilterParams 트레이스 필터링 매개변수
 type TraceFilterParams struct {
-	StartTime   int64  `form:"startTime"`
-	EndTime     int64  `form:"endTime"`
-	ServiceName string `form:"serviceName"`
-	Status      string `form:"status"`
-	MinDuration *int64 `form:"minDuration"`
-	MaxDuration *int64 `form:"maxDuration"`
-	Query       string `form:"query"`
-	Limit       int    `form:"limit,default=20"`
-	Offset      int    `form:"offset,default=0"`
+	StartTime     int64    `form:"startTime"`
+	EndTime       int64    `form:"endTime"`
+	ServiceNames  []string `form:"serviceName"`
+	Status        string   `form:"status"`
+	MinDuration   *int64   `form:"minDuration"`
+	MaxDuration   *int64   `form:"maxDuration"`
+	Query         string   `form:"query"`
+	Limit         int      `form:"limit,default=20"`
+	Offset        int      `form:"offset,default=0"`
+	RootSpansOnly bool     `form:"rootSpansOnly"` // 루트 스팬만 필터링 옵션 추가
 }
