@@ -37,39 +37,50 @@ var (
 )
 
 // NewRedisClient는 새 Redis 클라이언트 인스턴스를 생성합니다.
+// NewRedisClient는 새 Redis 클라이언트 인스턴스를 생성합니다.
 func NewRedisClient() (Client, error) {
 	var err error
+	var retryCount = 0
+	var maxRetries = 3
 
 	once.Do(func() {
 		cfg := config.GetConfig()
 		log := logger.GetLogger()
 
-		client := redis.NewClient(&redis.Options{
-			Addr:     cfg.Redis.Address,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
-			PoolSize: cfg.Redis.PoolSize,
-		})
+		for retryCount < maxRetries {
+			client := redis.NewClient(&redis.Options{
+				Addr:     cfg.Redis.Address,
+				Password: cfg.Redis.Password,
+				DB:       cfg.Redis.DB,
+				PoolSize: cfg.Redis.PoolSize,
+			})
 
-		// 연결 테스트
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+			// 연결 테스트
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		if err = client.Ping(ctx).Err(); err != nil {
-			log.Error().Err(err).Msg("Redis 연결 실패")
+			if err = client.Ping(ctx).Err(); err != nil {
+				retryCount++
+				log.Warn().Err(err).Int("retry", retryCount).Msg("Redis 연결 실패, 재시도 중...")
+				time.Sleep(time.Duration(retryCount) * time.Second) // 지수 백오프
+				continue
+			}
+
+			instance = &RedisClient{
+				client: client,
+				log:    log,
+			}
+
+			log.Info().
+				Str("addr", cfg.Redis.Address).
+				Int("db", cfg.Redis.DB).
+				Int("poolSize", cfg.Redis.PoolSize).
+				Msg("Redis 연결 성공")
+
 			return
 		}
 
-		instance = &RedisClient{
-			client: client,
-			log:    log,
-		}
-
-		log.Info().
-			Str("addr", cfg.Redis.Address).
-			Int("db", cfg.Redis.DB).
-			Int("poolSize", cfg.Redis.PoolSize).
-			Msg("Redis 연결 성공")
+		log.Error().Err(err).Int("retries", retryCount).Msg("최대 재시도 횟수에 도달했습니다. Redis 연결 실패")
 	})
 
 	if err != nil {

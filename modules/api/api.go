@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,12 +43,35 @@ func NewServer(cfg *config.Config, log logger.Logger, database db.Database) *Ser
 	logSvc := logService.NewLogService(logRepo)
 	traceSvc := traceService.NewTraceService(traceRepo)
 
-	// 라우터 설정
-	ginRouter := router.SetupRouter(cfg, log, traceSvc, logSvc)
+	// 캐시 서비스 초기화
+	var cacheService cache.CacheService
+	var redisClient redis.Client
+	var err error
+
+	if cfg.Redis.EnableCache {
+		log.Info().Msg("Redis 캐시 서비스 초기화 중...")
+		redisClient, err = redis.GetInstance()
+		if err != nil {
+			log.Error().Err(err).Msg("Redis 클라이언트 초기화 실패")
+		}
+
+		cacheService, err = cache.NewCacheService()
+		if err != nil {
+			log.Error().Err(err).Msg("캐시 서비스 초기화 실패")
+		} else {
+			log.Info().Msg("캐시 서비스 초기화 성공")
+		}
+	} else {
+		// 캐싱이 비활성화된 경우 더미 서비스 사용
+		cacheService, _ = cache.NewCacheService()
+	}
+
+	// 라우터 설정 (캐시 서비스 전달)
+	ginRouter := router.SetupRouter(cfg, log, traceSvc, logSvc, cacheService)
 
 	// HTTP 서버 설정
 	httpServer := &http.Server{
-		Addr:         ":" + "8080",
+		Addr:         ":" + strconv.Itoa(cfg.API.Port),
 		Handler:      ginRouter,
 		ReadTimeout:  time.Duration(cfg.API.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.API.WriteTimeout) * time.Second,
@@ -61,6 +85,8 @@ func NewServer(cfg *config.Config, log logger.Logger, database db.Database) *Ser
 		Log:          log,
 		TraceService: traceSvc,
 		LogService:   logSvc,
+		cacheService: cacheService,
+		redisClient:  redisClient,
 	}
 }
 
@@ -85,6 +111,15 @@ func (s *Server) Stop(ctx context.Context) error {
 	if err := s.HttpServer.Shutdown(ctx); err != nil {
 		s.Log.Error().Err(err).Msg("API 서버 정상 종료 실패")
 		return err
+	}
+
+	// Redis 연결 종료
+	if s.redisClient != nil {
+		if err := s.redisClient.Close(); err != nil {
+			s.Log.Error().Err(err).Msg("Redis 연결 종료 실패")
+		} else {
+			s.Log.Info().Msg("Redis 연결 종료 완료")
+		}
 	}
 
 	s.Log.Info().Msg("API 서버가 정상적으로 종료되었습니다")

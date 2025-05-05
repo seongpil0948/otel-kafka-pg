@@ -34,6 +34,7 @@ func (r responseBodyWriter) WriteString(s string) (int, error) {
 }
 
 // CachingMiddleware는 API 응답을 캐싱하는 미들웨어입니다.
+// CachingMiddleware는 API 응답을 캐싱하는 미들웨어입니다.
 func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// GET 메서드만 캐싱
@@ -44,6 +45,7 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 
 		// 캐싱이 비활성화된 경우
 		if !cacheService.IsEnabled() {
+			log.Debug().Str("url", c.Request.URL.String()).Msg("캐싱 비활성화 상태")
 			c.Next()
 			return
 		}
@@ -57,6 +59,7 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 
 		// 캐시 키 생성
 		cacheKey := generateCacheKey(c.Request, requestBody)
+		log.Debug().Str("cache_key", cacheKey).Str("url", c.Request.URL.String()).Msg("캐시 키 생성")
 
 		// 캐시에서 응답 확인
 		var cachedResponse struct {
@@ -68,7 +71,8 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 		err := cacheService.Get(c.Request.Context(), cacheKey, &cachedResponse)
 		if err == nil {
 			// 캐시 히트: 캐시된 응답 반환
-			log.Debug().Str("url", c.Request.URL.String()).Msg("캐시 히트")
+			log.Info().Str("url", c.Request.URL.String()).Str("cache_key", cacheKey).Msg("캐시 히트")
+			c.Header("X-Cache", "HIT")
 
 			// 캐시된 헤더 설정
 			for key, values := range cachedResponse.Header {
@@ -85,7 +89,8 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 		}
 
 		// 캐시 미스: 응답 캡처
-		log.Debug().Str("url", c.Request.URL.String()).Msg("캐시 미스")
+		log.Info().Str("url", c.Request.URL.String()).Str("cache_key", cacheKey).Err(err).Msg("캐시 미스")
+		c.Header("X-Cache", "MISS")
 		responseBody := &bytes.Buffer{}
 		rbw := &responseBodyWriter{ResponseWriter: c.Writer, body: responseBody}
 		c.Writer = rbw
@@ -106,8 +111,12 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 			}
 
 			if err := cacheService.Set(c.Request.Context(), cacheKey, response); err != nil {
-				log.Error().Err(err).Str("url", c.Request.URL.String()).Msg("응답 캐싱 실패")
+				log.Error().Err(err).Str("url", c.Request.URL.String()).Str("cache_key", cacheKey).Msg("응답 캐싱 실패")
+			} else {
+				log.Info().Str("url", c.Request.URL.String()).Str("cache_key", cacheKey).Msg("응답 캐싱 성공")
 			}
+		} else {
+			log.Debug().Str("url", c.Request.URL.String()).Int("status", c.Writer.Status()).Msg("응답 캐싱 건너뜀: 성공 상태 코드가 아님")
 		}
 	}
 }
@@ -115,44 +124,51 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 // generateCacheKey는 요청에 대한 고유한 캐시 키를 생성합니다.
 func generateCacheKey(req *http.Request, body []byte) string {
 	// URI 포함
-	parts := []string{req.URL.Path}
+	path := req.URL.Path
 
 	// 쿼리 파라미터 정렬 포함
-	queryParams := req.URL.Query()
-	if len(queryParams) > 0 {
-		keys := make([]string, 0, len(queryParams))
-		for k := range queryParams {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+	query := req.URL.Query()
 
-		for _, k := range keys {
-			values := queryParams[k]
-			sort.Strings(values)
-			for _, v := range values {
-				parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	// 정렬된 쿼리 파라미터 문자열 생성
+	var queryParts []string
+	if len(query) > 0 {
+		for k, values := range query {
+			if len(values) == 1 {
+				queryParts = append(queryParts, fmt.Sprintf("%s=%s", k, values[0]))
+			} else {
+				// 복수 값이 있는 경우 정렬하여 추가
+				sort.Strings(values)
+				for _, v := range values {
+					queryParts = append(queryParts, fmt.Sprintf("%s=%s", k, v))
+				}
 			}
 		}
+		sort.Strings(queryParts)
 	}
 
-	// 요청 본문이 있는 경우 해시 포함
+	// 해시 생성
+	h := sha256.New()
+	h.Write([]byte(path))
+
+	// 쿼리 파라미터 해시에 추가
+	for _, part := range queryParts {
+		h.Write([]byte(part))
+	}
+
+	// 요청 본문이 있는 경우 해시 추가
 	if len(body) > 0 {
-		h := sha256.New()
 		h.Write(body)
-		parts = append(parts, hex.EncodeToString(h.Sum(nil)))
 	}
 
-	// 키 구성
-	key := "api:cache:" + strings.Join(parts, ":")
-
-	// 최대 키 길이 제한 (Redis 권장)
-	if len(key) > 200 {
-		h := sha256.New()
-		h.Write([]byte(key))
-		key = "api:cache:" + hex.EncodeToString(h.Sum(nil))
+	// 사용자 에이전트 정보 (브라우저 캐시 구분용)
+	userAgent := req.Header.Get("User-Agent")
+	if userAgent != "" {
+		h.Write([]byte(userAgent))
 	}
 
-	return key
+	// 키 접두사 + 해시
+	hashStr := hex.EncodeToString(h.Sum(nil))
+	return fmt.Sprintf("api:cache:%s:%s", path, hashStr[:16])
 }
 
 // InvalidateCacheMiddleware는 변경 작업(POST, PUT, DELETE 등) 후 관련 캐시를 무효화하는 미들웨어입니다.

@@ -21,6 +21,23 @@ services:
     networks:
       - telemetry-network
 
+  redis:
+    image: redis:7.4.3-alpine
+    container_name: telemetry-redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - telemetry-network
+
   telemetry-backend:
     build:
       context: .
@@ -30,6 +47,8 @@ services:
     depends_on:
       pg:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     ports:
@@ -38,6 +57,9 @@ services:
       - API_PORT=8080
       - API_ALLOWED_ORIGINS=*
       - API_ENABLE_SWAGGER=true
+      - REDIS_ADDRESS=redis:6379
+      - REDIS_ENABLE_CACHE=true
+      - REDIS_TTL=3600
     healthcheck:
       test: ["CMD", "/app/healthcheck"]
       interval: 30s
@@ -53,3 +75,4 @@ networks:
 
 volumes:
   postgres-data:
+  redis-data:

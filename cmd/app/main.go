@@ -31,11 +31,9 @@ import (
 
 	"github.com/seongpil0948/otel-kafka-pg/modules/api"
 	"github.com/seongpil0948/otel-kafka-pg/modules/cleanup"
-	"github.com/seongpil0948/otel-kafka-pg/modules/common/cache"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/config"
 	commonDB "github.com/seongpil0948/otel-kafka-pg/modules/common/db"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
-	"github.com/seongpil0948/otel-kafka-pg/modules/common/redis"
 	"github.com/seongpil0948/otel-kafka-pg/modules/kafka/consumer"
 	"github.com/seongpil0948/otel-kafka-pg/modules/kafka/processor"
 	"github.com/seongpil0948/otel-kafka-pg/modules/log/repository"
@@ -50,7 +48,7 @@ func main() {
 	defer cancel()
 
 	// 1. 설정 초기화
-	cfg := config.LoadConfig() // 설정 로드 및 변수 참조
+	cfg := config.LoadConfig()
 
 	// 2. 로거 초기화
 	log := logger.Init()
@@ -80,29 +78,11 @@ func main() {
 		log.Info().Msg("데이터베이스 스키마가 이미 초기화되어 있음")
 	}
 
-	// 5. Redis 및 캐싱 설정 (추가)
-	var redisClient redis.Client
-	var cacheService cache.CacheService
-
-	if cfg.Redis.EnableCache {
-		log.Info().Msg("Redis 연결 초기화 중...")
-		redisClient, err = redis.NewRedisClient()
-		if err != nil {
-			log.Error().Err(err).Msg("Redis 연결 실패, 캐싱 비활성화")
-		} else {
-			log.Info().Msg("Redis 연결 성공")
-		}
-
-		log.Info().Msg("캐시 서비스 초기화 중...")
-		cacheService, err = cache.NewCacheService()
-		if err != nil {
-			log.Error().Err(err).Msg("캐시 서비스 초기화 실패")
-		} else {
-			log.Info().Msg("캐시 서비스 초기화 성공")
-		}
-	} else {
-		log.Info().Msg("Redis 캐싱이 비활성화되어 있습니다")
-	}
+	// 5. Redis 및 캐싱 설정은 api.go에서 처리
+	log.Info().Bool("enable_cache", cfg.Redis.EnableCache).
+		Str("redis_address", cfg.Redis.Address).
+		Int("redis_ttl", cfg.Redis.TTL).
+		Msg("Redis 설정 확인")
 
 	// 6. 저장소 및 서비스 계층 설정
 	logRepo := repository.NewLogRepository(database)
@@ -153,11 +133,11 @@ func main() {
 	log.Info().Str("signal", sig.String()).Msg("종료 신호 수신, 정상 종료를 시작합니다")
 
 	// 12. 정상 종료 처리
-	shutdown(ctx, database, redisClient, kafkaConsumer, cleanupSvc, apiServer, log)
+	shutdown(ctx, database, kafkaConsumer, cleanupSvc, apiServer, log)
 }
 
 // shutdown은 애플리케이션을 정상적으로 종료합니다.
-func shutdown(ctx context.Context, database commonDB.Database, redisClient redis.Client, kafkaConsumer consumer.Consumer, cleanupSvc cleanup.CleanupService, apiServer *api.Server, log logger.Logger) {
+func shutdown(ctx context.Context, database commonDB.Database, kafkaConsumer consumer.Consumer, cleanupSvc cleanup.CleanupService, apiServer *api.Server, log logger.Logger) {
 	// 종료 컨텍스트 생성
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -168,16 +148,6 @@ func shutdown(ctx context.Context, database commonDB.Database, redisClient redis
 		log.Error().Err(err).Msg("API 서버 종료 실패")
 	} else {
 		log.Info().Msg("API 서버가 정상적으로 종료되었습니다")
-	}
-
-	// Redis 클라이언트 종료
-	if redisClient != nil {
-		log.Info().Msg("Redis 연결 종료 중...")
-		if err := redisClient.Close(); err != nil {
-			log.Error().Err(err).Msg("Redis 연결 종료 실패")
-		} else {
-			log.Info().Msg("Redis 연결이 정상적으로 종료되었습니다")
-		}
 	}
 
 	// 데이터 정리 서비스 종료
