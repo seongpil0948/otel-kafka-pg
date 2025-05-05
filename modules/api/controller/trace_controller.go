@@ -27,6 +27,7 @@ func NewTraceController(traceService service.TraceService, logger logger.Logger)
 }
 
 // GetTraceByID godoc
+//
 //	@Summary		트레이스 ID로 상세 정보 조회
 //	@Description	특정 트레이스 ID에 대한 상세 정보를 조회합니다
 //	@Tags			traces
@@ -82,6 +83,7 @@ func (c *TraceController) GetTraceByID(ctx *gin.Context) {
 }
 
 // QueryTraces godoc
+//
 //	@Summary		트레이스 목록 조회
 //	@Description	필터 조건에 맞는 트레이스 목록을 조회합니다
 //	@Tags			traces
@@ -211,6 +213,7 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 }
 
 // GetServiceMetrics godoc
+//
 //	@Summary		서비스 지표 조회
 //	@Description	서비스별 성능 지표를 조회합니다
 //	@Tags			metrics
@@ -246,38 +249,18 @@ func (c *TraceController) GetServiceMetrics(ctx *gin.Context) {
 		}
 	}
 
-	// 서비스 지표를 가져오는 기능은 아직 구현되지 않았으므로 임시 응답을 반환합니다
-	// TODO: 실제 서비스 지표 조회 기능 구현
-
-	// 임시 응답 데이터
-	metrics := []dto.ServiceMetric{
-		{
-			Name:         "api-service",
-			RequestCount: 1250,
-			ErrorCount:   45,
-			AvgLatency:   125.5,
-			P95Latency:   350.2,
-			P99Latency:   520.8,
-			ErrorRate:    3.6,
-		},
-		{
-			Name:         "auth-service",
-			RequestCount: 860,
-			ErrorCount:   12,
-			AvgLatency:   75.3,
-			P95Latency:   180.1,
-			P99Latency:   250.4,
-			ErrorRate:    1.4,
-		},
-	}
-	if serviceName != "" {
-		filteredMetrics := []dto.ServiceMetric{}
-		for _, metric := range metrics {
-			if metric.Name == serviceName {
-				filteredMetrics = append(filteredMetrics, metric)
-			}
-		}
-		metrics = filteredMetrics
+	// 서비스 메트릭 조회
+	metrics, err := c.traceService.GetServiceMetrics(startTime, endTime, serviceName)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("서비스 메트릭 조회 실패")
+		ctx.JSON(http.StatusInternalServerError, dto.Response{
+			Success: false,
+			Error: &dto.ErrorInfo{
+				Code:    http.StatusInternalServerError,
+				Message: "서비스 메트릭을 가져오는 중 오류가 발생했습니다",
+			},
+		})
+		return
 	}
 
 	// 총 요청 및 오류 계산

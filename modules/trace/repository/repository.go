@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/seongpil0948/otel-kafka-pg/modules/api/dto"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/db"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
 	"github.com/seongpil0948/otel-kafka-pg/modules/trace/domain"
@@ -15,12 +16,15 @@ import (
 type TraceRepository interface {
 	// 트레이스 저장
 	SaveTraces(traces []domain.TraceItem) error
-	
+
 	// 특정 트레이스 조회
 	GetTraceByID(traceID string) (*domain.Trace, error)
-	
+
 	// 트레이스 쿼리
 	QueryTraces(filter domain.TraceFilter) (domain.TraceQueryResult, error)
+
+	// 서비스 메트릭 조회
+	GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error)
 }
 
 // PostgresTraceRepository는 PostgreSQL 트레이스 저장소 구현체입니다.
@@ -115,7 +119,7 @@ func (r *PostgresTraceRepository) GetTraceByID(traceID string) (*domain.Trace, e
 		WHERE trace_id = $1
 		ORDER BY start_time ASC
 	`
-	
+
 	rows, err := r.db.Query(query, traceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query trace by ID: %w", err)
@@ -124,7 +128,7 @@ func (r *PostgresTraceRepository) GetTraceByID(traceID string) (*domain.Trace, e
 
 	var spans []domain.Span
 	var services = make(map[string]bool)
-	var minStartTime int64 = 9223372036854775807  // int64 max
+	var minStartTime int64 = 9223372036854775807 // int64 max
 	var maxEndTime int64 = 0
 
 	for rows.Next() {
@@ -216,7 +220,7 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 	// 쿼리 파라미터 배열
 	queryParams := []interface{}{filter.StartTime, filter.EndTime}
 	paramIndex := 3
-	
+
 	// 기본 WHERE 조건
 	whereClause := "start_time >= $1 AND start_time <= $2"
 
@@ -393,4 +397,85 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 	result.Took = time.Since(startTime).Milliseconds()
 
 	return result, nil
+}
+
+// GetServiceMetrics는 지정된 시간 범위 내의 모든 고유 서비스 메트릭을 반환합니다.
+func (r *PostgresTraceRepository) GetServiceMetrics(startTime, endTime int64, serviceName string) ([]dto.ServiceMetric, error) {
+	// 쿼리 파라미터 배열
+	queryParams := []interface{}{startTime, endTime}
+	paramIndex := 3
+
+	// 기본 WHERE 조건
+	whereClause := "start_time >= $1 AND start_time <= $2 AND service_name IS NOT NULL"
+
+	// 서비스명 필터 (선택적)
+	if serviceName != "" {
+		whereClause += fmt.Sprintf(" AND service_name = $%d", paramIndex)
+		queryParams = append(queryParams, serviceName)
+		paramIndex++
+	}
+
+	query := fmt.Sprintf(`
+        SELECT 
+            service_name AS name,
+            COUNT(*) AS count,
+            COUNT(CASE WHEN status = 'ERROR' THEN 1 END) AS error_count,
+            AVG(duration) AS avg_latency,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration) AS p95_latency,
+            PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration) AS p99_latency
+        FROM 
+            traces
+        WHERE 
+            %s
+        GROUP BY 
+            service_name
+        ORDER BY 
+            count DESC
+    `, whereClause)
+
+	rows, err := r.db.Query(query, queryParams...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query service metrics: %w", err)
+	}
+	defer rows.Close()
+
+	var services []dto.ServiceMetric
+	for rows.Next() {
+		var service dto.ServiceMetric
+		var count, errorCount int64
+		var avgLatency, p95Latency, p99Latency sql.NullFloat64
+
+		err := rows.Scan(&service.Name, &count, &errorCount, &avgLatency, &p95Latency, &p99Latency)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan service metrics row: %w", err)
+		}
+
+		service.RequestCount = count
+		service.ErrorCount = errorCount
+
+		if avgLatency.Valid {
+			service.AvgLatency = avgLatency.Float64
+		}
+
+		if p95Latency.Valid {
+			service.P95Latency = p95Latency.Float64
+		}
+
+		if p99Latency.Valid {
+			service.P99Latency = p99Latency.Float64
+		}
+
+		service.ErrorRate = 0
+		if count > 0 {
+			service.ErrorRate = float64(errorCount) / float64(count) * 100
+		}
+
+		services = append(services, service)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating service metrics rows: %w", err)
+	}
+
+	return services, nil
 }
