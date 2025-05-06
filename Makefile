@@ -1,4 +1,4 @@
-.PHONY: build run test clean proto docker-build docker-compose-up docker-compose-down tidy redis-cli
+.PHONY: build run test clean proto docker-build docker compose-up docker compose-down tidy redis-cli
 
 -include .env
 export
@@ -48,27 +48,27 @@ docker-build:
 
 # Docker Compose 실행
 docker-compose-up:
-	docker-compose up -d --build --remove-orphans --force-recreate
+	docker compose up -d --build --remove-orphans --force-recreate
 	@echo "Docker Compose가 실행되었습니다."
 
 # Redis만 실행
 up-redis:
-	docker-compose up -d --build --remove-orphans --force-recreate redis
+	docker compose up -d --build --remove-orphans --force-recreate redis
 	@echo "Redis가 실행되었습니다."
 
 # DB만 실행
 up-db:
-	docker-compose up -d --build --remove-orphans --force-recreate pg
+	docker compose up -d --build --remove-orphans --force-recreate pg
 	@echo "PostgreSQL DB가 실행되었습니다."
 
 # 백엔드만 실행
 up-be:
-	docker-compose up -d --build --remove-orphans --force-recreate telemetry-backend
+	docker compose up -d --build --remove-orphans --force-recreate telemetry-backend
 	@echo "백엔드가 실행되었습니다."
 
 # Docker Compose 중지
-docker-compose-down:
-	docker-compose down
+docker compose-down:
+	docker compose down
 
 # 개발 환경 설정 (의존성 설치 등)
 dev-setup:
@@ -82,15 +82,15 @@ dev-setup:
 
 # 실행 로그 확인
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # 백엔드 로그만 확인
 logs-be:
-	docker-compose logs -f telemetry-backend
+	docker compose logs -f telemetry-backend
 
 # Redis 로그만 확인
 logs-redis:
-	docker-compose logs -f redis
+	docker compose logs -f redis
 
 # DB 마이그레이션 실행 (필요시)
 db-init:
@@ -112,7 +112,7 @@ swagger-fmt:
 	@echo "Swagger 문서 서식이 정리되었습니다."
 	
 # 전체 초기화 및 실행
-all: clean build docker-compose-up
+all: clean build docker compose-up
 	@echo "Application is now running!"
 
 push-gitlab:

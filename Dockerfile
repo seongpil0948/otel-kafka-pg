@@ -34,7 +34,7 @@ RUN mkdir -p /app/scripts
 # 바이너리 및 스크립트 복사
 COPY --from=builder /go/bin/app /app/
 COPY --from=builder /go/bin/healthcheck /app/
-COPY --from=builder /app/scripts/check-cache-env.sh /app/scripts/
+COPY --from=builder /app/scripts /app/scripts
 
 # 스크립트에 실행 권한 부여
 RUN chmod +x /app/scripts/*.sh
