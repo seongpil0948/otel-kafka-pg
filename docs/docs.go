@@ -51,9 +51,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "string",
-                        "description": "서비스 이름",
-                        "name": "serviceName",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "서비스 이름 목록",
+                        "name": "serviceNames",
                         "in": "query"
                     },
                     {
@@ -328,9 +332,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "string",
-                        "description": "서비스 이름",
-                        "name": "serviceName",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "서비스 이름 목록",
+                        "name": "serviceNames",
                         "in": "query"
                     },
                     {

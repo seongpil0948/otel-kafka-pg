@@ -35,7 +35,7 @@ func NewLogController(logService service.LogService, logger logger.Logger) *LogC
 //	@Produce		json
 //	@Param			startTime	query		int		false	"시작 시간 (밀리초 타임스탬프)"
 //	@Param			endTime		query		int		false	"종료 시간 (밀리초 타임스탬프)"
-//	@Param			serviceNames	query		string[]	false	"서비스 이름 목록"
+//	@Param			serviceNames	query		[]string	false	"서비스 이름 목록"
 //	@Param			severity	query		string	false	"심각도 (INFO, WARN, ERROR, FATAL 등)"
 //	@Param			hasTrace	query		boolean	false	"트레이스 ID가 있는 로그만 필터링"
 //	@Param			query		query		string	false	"검색어"

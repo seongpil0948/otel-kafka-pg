@@ -256,10 +256,13 @@ paths:
         in: query
         name: endTime
         type: integer
-      - description: 서비스 이름
+      - collectionFormat: csv
+        description: 서비스 이름 목록
         in: query
-        name: serviceName
-        type: string
+        items:
+          type: string
+        name: serviceNames
+        type: array
       - description: 심각도 (INFO, WARN, ERROR, FATAL 등)
         in: query
         name: severity
@@ -430,10 +433,13 @@ paths:
         in: query
         name: endTime
         type: integer
-      - description: 서비스 이름
+      - collectionFormat: csv
+        description: 서비스 이름 목록
         in: query
-        name: serviceName
-        type: string
+        items:
+          type: string
+        name: serviceNames
+        type: array
       - description: 상태 (OK, ERROR 등)
         in: query
         name: status
