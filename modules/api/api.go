@@ -53,6 +53,7 @@ func NewServer(cfg *config.Config, log logger.Logger, database db.Database) *Ser
 		redisClient, err = redis.GetInstance()
 		if err != nil {
 			log.Error().Err(err).Msg("Redis 클라이언트 초기화 실패")
+			panic(err)
 		}
 
 		cacheService, err = cache.NewCacheService()

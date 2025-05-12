@@ -38,6 +38,8 @@ type TracesResponse struct {
 	TimeRange     TimeRange               `json:"timeRange"`
 	Services      []string                `json:"services,omitempty"`
 	TotalDuration int64                   `json:"totalDuration,omitempty"`
+	SortField     string                  `json:"sortField,omitempty"`
+	SortDirection string                  `json:"sortDirection,omitempty"`
 }
 
 // TraceDetailResponse 트레이스 상세 응답
@@ -101,4 +103,6 @@ type TraceFilterParams struct {
 	Limit         int      `form:"limit,default=20"`
 	Offset        int      `form:"offset,default=0"`
 	RootSpansOnly bool     `form:"rootSpansOnly"` // 루트 스팬만 필터링 옵션 추가
+	SortField     string   `form:"sortField"`
+	SortDirection string   `form:"sortDirection"`
 }

@@ -112,7 +112,6 @@ func (r *PostgresTraceRepository) SaveTraces(traces []domain.TraceItem) error {
 	return nil
 }
 
-// GetTraceByID는 특정 트레이스 ID에 해당하는 모든 스팬을 가져옵니다.
 func (r *PostgresTraceRepository) GetTraceByID(traceID string) (*domain.Trace, error) {
 	query := `
 		SELECT 
@@ -211,7 +210,6 @@ func (r *PostgresTraceRepository) GetTraceByID(traceID string) (*domain.Trace, e
 	return trace, nil
 }
 
-// QueryTraces는 필터에 따라 트레이스를 쿼리합니다.
 func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain.TraceQueryResult, error) {
 	startTime := time.Now()
 	result := domain.TraceQueryResult{
@@ -220,13 +218,37 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 		Total:       0,
 		Took:        0,
 	}
-
-	// 쿼리 파라미터 배열
 	queryParams := []interface{}{filter.StartTime, filter.EndTime}
 	paramIndex := 3
-
-	// 기본 WHERE 조건
 	whereClause := "start_time >= $1 AND start_time <= $2"
+
+	sortFieldMap := map[string]string{
+		"startTime":   "start_time",
+		"endTime":     "end_time",
+		"duration":    "duration",
+		"name":        "name",
+		"serviceName": "service_name",
+		"status":      "status",
+	}
+
+	// 기본 정렬 설정
+	sortField := "start_time"
+	sortDirection := "DESC"
+
+	// 클라이언트 정렬 필드를 DB 컬럼명으로 변환
+	if dbField, ok := sortFieldMap[filter.SortField]; ok {
+		sortField = dbField
+	} else {
+		// 지원하지 않는 정렬 필드인 경우 기본값 사용
+		r.log.Warn().Str("sortField", filter.SortField).Msg("지원하지 않는 정렬 필드, 기본값(start_time) 사용")
+	}
+
+	if filter.SortDirection == "ASC" || filter.SortDirection == "DESC" {
+		sortDirection = filter.SortDirection
+	} else {
+		// 지원하지 않는 정렬 방향인 경우 기본값 사용
+		r.log.Warn().Str("sortDirection", filter.SortDirection).Msg("지원하지 않는 정렬 방향, 기본값(DESC) 사용")
+	}
 
 	// 서비스명 필터 수정
 	if len(filter.ServiceNames) > 0 {
@@ -274,26 +296,36 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 		queryParams = append(queryParams, "%"+*filter.Query+"%")
 		paramIndex++
 	}
+	if filter.RootSpansOnly {
+		whereClause += " AND (parent_span_id = '' OR parent_span_id IS NULL)"
+	}
 
-	// 1. 트레이스 조회 쿼리
 	tracesQuery := fmt.Sprintf(`
-		SELECT 
-			id, trace_id AS "traceId", span_id AS "spanId", parent_span_id AS "parentSpanId",
-			name, service_name AS "serviceName", start_time AS "startTime",
-			end_time AS "endTime", duration, status, attributes
-		FROM 
-			traces
-		WHERE 
-			%s
-		ORDER BY 
-			start_time DESC
-		LIMIT $%d
-		OFFSET $%d
-	`, whereClause, paramIndex, paramIndex+1)
+        SELECT 
+            id, trace_id AS "traceId", span_id AS "spanId", parent_span_id AS "parentSpanId",
+            name, service_name AS "serviceName", start_time AS "startTime",
+            end_time AS "endTime", duration, status, attributes
+        FROM 
+            traces
+        WHERE 
+            %s
+        ORDER BY 
+            %s %s
+        LIMIT $%d
+        OFFSET $%d
+    `, whereClause, sortField, sortDirection, paramIndex, paramIndex+1)
 
 	queryParams = append(queryParams, filter.Limit, filter.Offset)
 
-	// 2. 트레이스 그룹 쿼리
+	var groupSortField string
+	if sortField == "start_time" {
+		groupSortField = "MIN(start_time)"
+	} else if sortField == "duration" {
+		groupSortField = "MAX(end_time) - MIN(start_time)"
+	} else {
+		groupSortField = "trace_id"
+	}
+
 	traceGroupsQuery := fmt.Sprintf(`
 		SELECT 
 			trace_id AS "traceId",
@@ -308,9 +340,9 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 		GROUP BY 
 			trace_id
 		ORDER BY 
-			MIN(start_time) DESC
+			%s %s
 		LIMIT 100
-	`, whereClause)
+	`, whereClause, groupSortField, sortDirection)
 
 	// 3. 총 개수 카운트 쿼리
 	countQuery := fmt.Sprintf(`
@@ -318,6 +350,14 @@ func (r *PostgresTraceRepository) QueryTraces(filter domain.TraceFilter) (domain
 		FROM traces
 		WHERE %s
 	`, whereClause)
+
+	r.log.Debug().
+		Str("sortField", filter.SortField).
+		Str("dbSortField", sortField).
+		Str("sortDirection", sortDirection).
+		Str("whereClause", whereClause).
+		Str("fullQuery", tracesQuery).
+		Msg("정렬 적용된 트레이스 쿼리 실행")
 
 	// 트레이스 조회
 	tracesRows, err := r.db.Query(tracesQuery, queryParams...)

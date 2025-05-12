@@ -1,6 +1,8 @@
 package service
 
 import (
+	"time"
+
 	"github.com/seongpil0948/otel-kafka-pg/modules/api/dto"
 	"github.com/seongpil0948/otel-kafka-pg/modules/common/logger"
 	"github.com/seongpil0948/otel-kafka-pg/modules/trace/domain"
@@ -47,16 +49,16 @@ func (s *TraceServiceImpl) GetTraceByID(traceID string) (*domain.Trace, error) {
 	return s.repository.GetTraceByID(traceID)
 }
 
-// QueryTraces는 트레이스를 쿼리합니다.
 func (s *TraceServiceImpl) QueryTraces(filter domain.TraceFilter) (domain.TraceQueryResult, error) {
-	// 기본값 설정
-	if filter.Limit <= 0 {
-		filter.Limit = 20
+	now := time.Now().UnixMilli()
+	if filter.EndTime == 0 {
+		filter.EndTime = now
 	}
-
-	// 100개 이상의 트레이스를 요청하는 경우 제한
-	if filter.Limit > 100 {
-		filter.Limit = 100
+	if filter.StartTime == 0 {
+		filter.StartTime = now - 3600000 // 기본값: 최근 1시간
+	}
+	if filter.Limit == 0 {
+		filter.Limit = 100 // 기본값: 100개
 	}
 
 	return s.repository.QueryTraces(filter)

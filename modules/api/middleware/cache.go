@@ -88,7 +88,6 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 			return
 		}
 
-		// 캐시 미스: 응답 캡처
 		log.Info().Str("url", c.Request.URL.String()).Str("cache_key", cacheKey).Err(err).Msg("캐시 미스")
 		c.Header("X-Cache", "MISS")
 		responseBody := &bytes.Buffer{}
@@ -99,7 +98,6 @@ func CachingMiddleware(cacheService cache.CacheService, log logger.Logger) gin.H
 
 		// 응답이 이미 전송되었고 상태 코드가 성공인 경우에만 캐싱
 		if c.Writer.Status() >= 200 && c.Writer.Status() < 300 {
-			// 캐시에 응답 저장
 			response := struct {
 				Status int                 `json:"status"`
 				Header map[string][]string `json:"header"`

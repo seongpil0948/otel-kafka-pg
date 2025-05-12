@@ -99,6 +99,8 @@ type TraceFilter struct {
 	Limit         int      `json:"limit"`
 	Offset        int      `json:"offset"`
 	RootSpansOnly bool     `json:"rootSpansOnly,omitempty"`
+	SortField     string   `json:"sortField,omitempty"`
+	SortDirection string   `json:"sortDirection,omitempty"`
 }
 
 // TraceQueryResult는 트레이스 쿼리 결과를 정의합니다.

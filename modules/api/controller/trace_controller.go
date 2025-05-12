@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -116,23 +117,6 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 		return
 	}
 
-	// 기본 시간 범위 설정 (기본값: 최근 1시간)
-	now := time.Now().UnixMilli()
-	if params.EndTime == 0 {
-		params.EndTime = now
-	}
-	if params.StartTime == 0 {
-		params.StartTime = now - 3600000 // 1시간 전
-	}
-
-	// 기본 페이지네이션 설정
-	if params.Limit <= 0 {
-		params.Limit = 20
-	}
-	if params.Limit > 100 {
-		params.Limit = 100
-	}
-
 	// 트레이스 필터 구성
 	filter := traceDomain.TraceFilter{
 		StartTime:     params.StartTime,
@@ -152,8 +136,6 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 	if params.Query != "" {
 		filter.Query = &params.Query
 	}
-
-	// 지속 시간 필터 설정
 	if params.MinDuration != nil && *params.MinDuration > 0 {
 		fmin := float64(*params.MinDuration)
 		filter.MinDuration = &fmin
@@ -161,6 +143,18 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 	if params.MaxDuration != nil && *params.MaxDuration > 0 {
 		fmax := float64(*params.MaxDuration)
 		filter.MaxDuration = &fmax
+	}
+
+	if params.SortField != "" {
+		filter.SortField = params.SortField
+	} else {
+		filter.SortField = "startTime" // 기본값
+	}
+
+	if params.SortDirection != "" {
+		filter.SortDirection = strings.ToUpper(params.SortDirection)
+	} else {
+		filter.SortDirection = "DESC" // 기본값
 	}
 
 	// 쿼리 실행
@@ -205,7 +199,9 @@ func (c *TraceController) QueryTraces(ctx *gin.Context) {
 			EndTime:   params.EndTime,
 		},
 		Services:      servicesList,
-		TotalDuration: int64(totalDuration), // Converted float64 to int64
+		TotalDuration: int64(totalDuration),
+		SortField:     params.SortField,
+		SortDirection: params.SortDirection,
 	}
 
 	ctx.JSON(http.StatusOK, dto.Response{
